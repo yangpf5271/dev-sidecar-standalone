@@ -490,10 +490,14 @@ async function cmdMirrorRemove (args) {
   requireLinux('remove')
   const raw = args[0]
   if (!raw || raw === 'off') {
-    // off = 移除全部
+    // off = 移除全部;无配置时不做无谓重启(避免打断运行中容器)
     const daemon = readDaemonJson()
     if (!daemon.ok) { console.error(`❌ ${daemon.error}`); process.exit(1) }
     const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
+    if (mirrors.length === 0) {
+      console.log('当前未配置任何镜像源,无需移除')
+      return
+    }
     for (const url of mirrors) {
       await removeOne(url)
     }
@@ -532,8 +536,9 @@ async function finishRemove () {
   console.log(r.ok ? '✅ docker 已重启' : '❌ 重启失败,请手动重启')
 }
 
-async function cmdMirrorRefresh () {
+async function cmdMirrorRefresh (args = []) {
   requireLinux('refresh')
+  const cf = args.includes('--cf')
   const daemon = readDaemonJson()
   if (!daemon.ok) { console.error(`❌ ${daemon.error}`); process.exit(1) }
   const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
@@ -544,7 +549,7 @@ async function cmdMirrorRefresh () {
   const updates = new Map()
   for (const url of mirrors) {
     const parsed = parseMirrorUrl(url)
-    if (!(await shouldOptimize(parsed.host, false))) {
+    if (!(await shouldOptimize(parsed.host, cf))) {
       console.log(`跳过非 CF 域名: ${parsed.host}`)
       continue
     }
@@ -617,7 +622,7 @@ async function run (args) {
     const rest = args.slice(2)
     if (action === 'add') return cmdMirrorAdd(rest)
     if (action === 'remove') return cmdMirrorRemove(rest)
-    if (action === 'refresh') return cmdMirrorRefresh()
+    if (action === 'refresh') return cmdMirrorRefresh(rest)
     if (action === 'status' || action === undefined) {
       // mirror status 复用整体 status
       return cmdStatus()

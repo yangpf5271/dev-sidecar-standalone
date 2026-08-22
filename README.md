@@ -198,6 +198,8 @@ Docker 场景分两层，分别解决「拉不动基础镜像」和「构建时�
 
 ```bash
 # 接入自建镜像源（推荐，谁使用谁部署，见下方「自建镜像站」）
+# 公网鉴权用路径模式 https://域名/<token>（需 Docker Engine ≥ 24；
+# 旧版 Docker 请在 Worker 侧不设 token，CLI 会在旧版上自动拦截路径模式）
 dss docker mirror add https://mirror.你的域名.com/<token>
 
 # 变慢时重测优选 IP（CF 边缘 IP 质量会漂移，这是自建站变慢的主因）
