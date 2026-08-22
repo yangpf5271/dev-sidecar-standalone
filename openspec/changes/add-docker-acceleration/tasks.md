@@ -33,6 +33,6 @@
 
 ## 6. 集成收尾：注册、文档、CI、发版
 
-- [ ] 6.1 `src/cli/index.js` 注册 `docker` 子命令，更新 USAGE 与 `index.js -h` 帮助文本；README 新增「Docker 加速」章节（两层命令 + Worker 指引链接 + WSL 全配方 + MITM 域名 CA 文档方案）
-- [ ] 6.2 CI 新增构建层步骤：预埋 auths → `dss docker on` → 断言 auths 保留/proxies 就位/noProxy 含内网主机 → `dss docker off` → 断言 auths 依旧（三平台矩阵）
-- [ ] 6.3 WSL 端到端实测：假镜像站全流程（add → docker info → remove）+ 真实 CF 域名钉定/refresh 路径；版本升至 1.4.0，提交推送，CI 全绿
+- [x] 6.1 `src/cli/index.js` 注册 `docker` 子命令，更新 USAGE 与 `index.js -h` 帮助文本；README 新增「Docker 加速」章节（两层命令 + Worker 指引链接 + WSL 全配方 + MITM 域名 CA 文档方案）
+- [x] 6.2 CI 新增构建层步骤：预埋 auths → `dss docker on` → 断言 auths 保留/proxies 就位/noProxy 含内网主机 → `dss docker off` → 断言 auths 依旧（三平台矩阵）
+- [x] 6.3 WSL 端到端实测：假镜像站全流程（add → docker info → remove）+ 真实 CF 域名钉定/refresh 路径；版本升至 1.4.0，提交推送，CI 全绿
