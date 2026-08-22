@@ -106,7 +106,7 @@ dss start              # 后台启动（守护进程）
 dss stop               # 停止，并自动恢复 npm/git 中指向本代理的配置
 dss restart            # 重启（保留配置，不断加速状态）
 dss log [-f] [-n 200]  # 查看守护进程日志（-f 持续跟随）
-dss status             # 运行状态 / 端口 / PID / 证书状态
+dss status             # 全景状态：进程 / 证书是否已装进系统信任 / 各工具代理 / 镜像源 / Docker
 ```
 
 `dss stop` / `dss restore` 采用**智能恢复**：只清理 dss 设置的、且仍指向本代理地址的配置项，用户自己的其他代理配置（公司代理等）绝对不受影响。代理崩溃/被强杀后的配置残留，用 `dss restore` 一键扫尾；`dss status` 检测到残留会主动提示。

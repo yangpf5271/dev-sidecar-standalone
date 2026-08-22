@@ -109,6 +109,9 @@ jobs:
             echo "FAIL: positional config arg should be rejected"; exit 1
           fi
 
+          # 全景状态面板: 停止状态+无证书+无任何工具配置时应正常退出
+          node index.js status > /dev/null
+
           echo "CLI tests (stopped) passed"
 
       # 启动冒烟 + 端到端 + 证书生成后的完整模式

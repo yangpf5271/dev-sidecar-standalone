@@ -21,7 +21,7 @@ const USAGE = `进程管理:
   dss stop               停止代理并恢复 npm/git 代理配置
   dss restart            重启代理（保留配置）
   dss log [-f] [-n N]    查看守护进程日志
-  dss status             查看运行状态 / 端口 / PID / 证书
+  dss status             全景状态: 进程/证书信任/工具代理/镜像源/Docker
 
 一键配置:
   dss npm on [--mitm]   配置 npm 走代理（--mitm 启用 HTTPS 拦截加速）

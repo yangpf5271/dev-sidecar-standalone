@@ -222,4 +222,4 @@ async function mirrorStatus () {
   console.log(`  ${'npm'.padEnd(12)} 官方源  ${NPM_OFFICIAL}（off 未有快照时恢复到它）`)
 }
 
-module.exports = { run, help }
+module.exports = { run, help, NPM_MIRRORS, NPM_OFFICIAL }

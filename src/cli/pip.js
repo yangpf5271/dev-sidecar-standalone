@@ -153,4 +153,4 @@ function help () {
   console.log('  dss pip mirror off')
 }
 
-module.exports = { run, help }
+module.exports = { run, help, PIP_MIRRORS, PIP_OFFICIAL }
