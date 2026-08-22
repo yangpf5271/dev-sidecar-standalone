@@ -1,5 +1,5 @@
 // dss git on|off — 配置/取消 git 代理（全局配置）
-const { resolveProxyAddress, resolveCertPaths, runCommand, warnIfProxyDown } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, runCommand, warnIfProxyDown, makeConfigValueLabel } = require('./utils')
 const { adapters } = require('./tool-config')
 
 async function run (args) {
@@ -69,7 +69,7 @@ async function disable () {
 
 async function showStatus () {
   const r = await adapters.git.read()
-  const label = (v) => (r.ok ? (v != null ? v : '(未设置)') : '获取失败')
+  const label = makeConfigValueLabel(r.ok)
   const v = (r.ok && r.values) || {}
   console.log('当前 git 全局代理配置:')
   console.log(`  http.proxy: ${label(v.http)}`)

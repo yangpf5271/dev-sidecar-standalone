@@ -1,6 +1,6 @@
 // dss npm on|off — 配置/取消 npm 代理
 // dss npm mirror <name>|off|status — 切换/恢复/查看 npm 镜像源
-const { resolveProxyAddress, resolveCertPaths, warnIfProxyDown } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, warnIfProxyDown, makeConfigValueLabel } = require('./utils')
 const { adapters } = require('./tool-config')
 const { createMirrorEngine } = require('./tool-config/mirror-engine')
 
@@ -71,7 +71,7 @@ async function disable () {
 
 async function showStatus () {
   const r = await adapters.npm.read()
-  const label = (v) => (r.ok ? (v != null ? v : '(未设置)') : '获取失败')
+  const label = makeConfigValueLabel(r.ok)
   const v = (r.ok && r.values) || {}
   console.log('当前 npm 配置:')
   console.log(`  proxy: ${label(v.http)}`)
