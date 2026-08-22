@@ -84,17 +84,21 @@ function sudoCopy (src, dst) {
   })
 }
 
-/** 重启 docker:systemd 优先,传统 service 回退 */
+/** 重启 docker:systemd 优先,传统 service 回退;短间隔连续重启可能瞬时失败,重试一次 */
 async function restartDocker () {
   const sysd = await runCommand('systemctl', ['is-active', '--quiet', 'docker'])
   const cmd = sysd.ok
     ? () => spawn('sudo', ['systemctl', 'restart', 'docker'], { stdio: 'inherit' })
     : () => spawn('sudo', ['service', 'docker', 'restart'], { stdio: 'inherit' })
-  return new Promise((resolve) => {
+  const attempt = () => new Promise((resolve) => {
     const child = cmd()
     child.on('error', (e) => resolve({ ok: false, error: e.message }))
     child.on('close', (code) => resolve({ ok: code === 0 }))
   })
+  const first = await attempt()
+  if (first.ok) return first
+  await new Promise((r) => setTimeout(r, 2000))
+  return attempt()
 }
 
 /** 简单 HTTP GET,只取状态码(不跟随重定向) */
@@ -368,6 +372,13 @@ async function optimizeCfIp () {
   return ranked[0].ip
 }
 
+/** 读取 docker 主版本号(解析失败返回 null) */
+async function dockerMajorVersion () {
+  const r = await runCommand('docker', ['--version'])
+  const m = r.ok ? r.stdout.match(/Docker version (\d+)\./) : null
+  return m ? parseInt(m[1], 10) : null
+}
+
 async function cmdMirrorAdd (args) {
   requireLinux('add')
   const raw = args[0]
@@ -379,6 +390,21 @@ async function cmdMirrorAdd (args) {
   const cf = args.includes('--cf')
   const noPin = args.includes('--no-pin')
   const parsed = parseMirrorUrl(raw)
+
+  // 路径前缀 token 模式需 Docker ≥ 24:旧版 daemon 会因 mirror 含路径拒绝启动,
+  // 写入即导致 docker 起不来——比拉取失败严重得多,必须前置拦截
+  if (parsed.pathBase) {
+    const ver = await dockerMajorVersion()
+    if (ver != null && ver < 24) {
+      console.error(`❌ 镜像地址含路径前缀(路径模式),但当前 Docker Engine 为 ${ver}.x`)
+      console.error('   Docker ≤ 23.x 的 daemon 会因 registry-mirror 含路径而拒绝启动')
+      console.error('   方案: ① 改用 Basic 模式(docker login, 全版本兼容):')
+      console.error(`        docker login ${parsed.host} -u any -p <token> 后 add 不带路径的地址`)
+      console.error('   ② 升级 Docker ≥ 24   ③ 确认风险后 --force 强制写入')
+      if (!force) process.exit(1)
+      console.error('   (--force 已指定,继续写入,风险自负)')
+    }
+  }
 
   // 1. 健康检查(硬阻断,--force 逃生)
   if (!force) {
@@ -605,6 +631,8 @@ function help () {
   console.log('拉取层(解决 docker pull,需 Linux/WSL + sudo):')
   console.log('  dss docker mirror add <url> [--force] [--cf] [--no-pin]')
   console.log('        健康检查 → CF 边缘优选 → hosts 钉定 → daemon.json 合并 → 重启 docker')
+  console.log('        带 token 的镜像源两种模式: Basic(推荐, docker login, 全版本兼容)')
+  console.log('        / 路径前缀 https://域名/<token>(需 Docker ≥ 24,旧版会拒绝启动)')
   console.log('  dss docker mirror remove <url>   移除(或 remove off 移除全部)')
   console.log('  dss docker mirror refresh        重测优选 IP(变慢时执行)')
   console.log('  dss docker status                总览状态')
