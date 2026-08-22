@@ -38,6 +38,37 @@ module.exports = (deps) => {
     },
 
     /**
+     * 写入代理配置并自动记录快照(写配置+记快照原子化, 供 dss npm on)。
+     * entries: { 键: 值 }; 失败立即返回, 已写入的键保留(下次 clean 可收尾)
+     */
+    async setProxy (entries) {
+      try {
+        for (const [key, value] of Object.entries(entries)) {
+          const r = await deps.run('npm', ['config', 'set', key, value], { shell: true })
+          if (!r.ok) return { ok: false, error: `npm config set ${key} 失败: ${r.error || r.stderr}` }
+        }
+        deps.snapshot.updateTool('npm', entries)
+        return { ok: true, written: Object.entries(entries) }
+      } catch (e) {
+        return { ok: false, error: e.message }
+      }
+    },
+
+    /** 清除全部代理键(off 语义: 无条件清除; 供 dss npm off) */
+    async clearProxy () {
+      try {
+        for (const key of KEYS) {
+          const r = await deps.run('npm', ['config', 'delete', key], { shell: true })
+          if (!r.ok) return { ok: false, error: `npm config delete ${key} 失败: ${r.error || r.stderr}` }
+        }
+        deps.snapshot.clearTool('npm')
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e.message }
+      }
+    },
+
+    /**
      * 严格清理: proxy/https-proxy 精确候选集匹配, cafile 路径归一化后精确匹配。
      * 删除后重读验证(env/.npmrc 覆盖场景记入 notes); 段内无用户数据时清快照段。
      */

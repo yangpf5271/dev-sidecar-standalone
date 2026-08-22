@@ -1,5 +1,6 @@
 // dss git on|off — 配置/取消 git 代理（全局配置）
-const { resolveProxyAddress, resolveCertPaths, runCommand, probePort, updateSnapshot, clearSnapshotSection } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, runCommand, warnIfProxyDown } = require('./utils')
+const { adapters } = require('./tool-config')
 
 async function run (args) {
   const action = args[0]
@@ -23,19 +24,7 @@ async function run (args) {
 async function enable (args) {
   const addr = resolveProxyAddress(args)
   const simple = args.includes('--simple')
-
-  // 探测代理是否在运行（仅提示，不阻断）
-  const httpUp = await probePort(addr.host, addr.httpPort)
-  if (!httpUp) {
-    console.log(`⚠️  代理似乎未在运行 (${addr.host}:${addr.httpPort} 未监听)`)
-    console.log('   如果代理未启动，git 将无法联网。建议先运行: dss')
-    console.log('')
-  }
-  if (!addr.isDefaultPort) {
-    console.log(`ℹ️  使用非默认端口 (来自${addr.configPath ? '配置文件' : 'PORT 环境变量'})，`)
-    console.log('   请确认代理启动时使用了相同的配置')
-    console.log('')
-  }
+  await warnIfProxyDown(addr, 'git')
 
   const tasks = [
     ['http.proxy', `http://${addr.host}:${addr.httpPort}`],
@@ -54,45 +43,38 @@ async function enable (args) {
     tasks.push(['http.sslCAInfo', certPath])
   }
 
-  for (const [key, value] of tasks) {
-    const r = await runCommand('git', ['config', '--global', key, value])
-    if (!r.ok) {
-      console.error(`❌ git config --global ${key} 失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
+  // 写入 + 快照记录原子化在 adapter 内(供 dss stop / dss restore 智能恢复)
+  const r = await adapters.git.setProxy(Object.fromEntries(tasks))
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
+    process.exit(1)
+  }
+  for (const [key, value] of r.written) {
     console.log(`✅ git config --global ${key} ${value}`)
   }
 
   console.log('')
   console.log(simple ? 'git 已配置为简单代理模式（仅 HTTP 隧道，无需证书）' : 'git 已配置为完整加速模式（HTTPS MITM + CA 证书）')
   console.log('取消配置: dss git off')
-
-  // 记录本次写入的实际值，供 dss stop / dss restore 智能恢复
-  updateSnapshot('git', Object.fromEntries(tasks))
 }
 
 async function disable () {
-  const keys = ['http.proxy', 'https.proxy', 'http.sslCAInfo']
-  for (const key of keys) {
-    const r = await runCommand('git', ['config', '--global', '--unset', key])
-    // unset 已不存在的 key 返回非 0，属正常情况
-    if (!r.ok && r.code !== 5 && !/no such section/i.test(r.stderr)) {
-      console.error(`❌ git config --unset ${key} 失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
+  const r = await adapters.git.clearProxy()
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
+    process.exit(1)
   }
-  clearSnapshotSection('git')
   console.log('✅ git 代理配置已清除 (http.proxy / https.proxy / http.sslCAInfo)')
 }
 
 async function showStatus () {
-  const keys = ['http.proxy', 'https.proxy', 'http.sslCAInfo']
+  const r = await adapters.git.read()
+  const label = (v) => (r.ok ? (v != null ? v : '(未设置)') : '获取失败')
+  const v = (r.ok && r.values) || {}
   console.log('当前 git 全局代理配置:')
-  for (const key of keys) {
-    const r = await runCommand('git', ['config', '--global', '--get', key])
-    const value = r.ok && r.stdout ? r.stdout : '(未设置)'
-    console.log(`  ${key}: ${value}`)
-  }
+  console.log(`  http.proxy: ${label(v.http)}`)
+  console.log(`  https.proxy: ${label(v.https)}`)
+  console.log(`  http.sslCAInfo: ${label(v.ca)}`)
 }
 
 function help () {

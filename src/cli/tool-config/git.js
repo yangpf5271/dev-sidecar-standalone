@@ -32,6 +32,36 @@ module.exports = (deps) => {
       return { ok: true, ...c, values: r.values }
     },
 
+    /** 写入代理配置并自动记录快照(原子化, 供 dss git on) */
+    async setProxy (entries) {
+      try {
+        for (const [key, value] of Object.entries(entries)) {
+          const r = await deps.run('git', ['config', '--global', key, value])
+          if (!r.ok) return { ok: false, error: `git config --global ${key} 失败: ${r.error || r.stderr}` }
+        }
+        deps.snapshot.updateTool('git', entries)
+        return { ok: true, written: Object.entries(entries) }
+      } catch (e) {
+        return { ok: false, error: e.message }
+      }
+    },
+
+    /** 清除全部代理键(off 语义: 无条件清除; 供 dss git off) */
+    async clearProxy () {
+      try {
+        for (const key of KEYS) {
+          const r = await deps.run('git', ['config', '--global', '--unset', key])
+          if (!r.ok && r.code !== 5 && !/no such section/i.test(r.stderr || '')) {
+            return { ok: false, error: `git config --unset ${key} 失败: ${r.error || r.stderr}` }
+          }
+        }
+        deps.snapshot.clearTool('git')
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e.message }
+      }
+    },
+
     /** 严格清理: 代理键精确候选集匹配, 证书键路径归一化匹配; 段内无用户数据时清快照段 */
     async clean (addr, { dryRun = false } = {}) {
       try {

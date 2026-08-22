@@ -118,6 +118,23 @@ function probePort (host, port, timeout = 1500) {
   })
 }
 
+/**
+ * "代理未运行"警告 + 非默认端口提示（npm/git/env 等命令 on 前的共享提示，仅提示不阻断）
+ */
+async function warnIfProxyDown (addr, toolLabel) {
+  const httpUp = await probePort(addr.host, addr.httpPort)
+  if (!httpUp) {
+    console.log(`⚠️  代理似乎未在运行 (${addr.host}:${addr.httpPort} 未监听)`)
+    console.log(`   如果代理未启动，${toolLabel} 将无法联网。建议先运行: dss`)
+    console.log('')
+  }
+  if (!addr.isDefaultPort) {
+    console.log(`ℹ️  使用非默认端口 (来自${addr.configPath ? '配置文件' : 'PORT 环境变量'})，`)
+    console.log('   请确认代理启动时使用了相同的配置')
+    console.log('')
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 进程管理：PID 文件 / 日志路径 / 进程身份验证 / 端口反查
 // 所有路径跟随 DEV_SIDECAR_HOME（与证书目录一致）
@@ -420,6 +437,7 @@ module.exports = {
   resolveCertPaths,
   runCommand,
   probePort,
+  warnIfProxyDown,
   // 进程管理
   pidFilePath,
   logFilePath,

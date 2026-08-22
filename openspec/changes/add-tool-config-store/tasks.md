@@ -36,9 +36,9 @@
 
 ## 6. 切片六：npm/git 命令改薄（第②步）
 
-- [ ] 6.1 npm/git 的 on/off/status 改走 adapter（set 自动记快照、off 自动清段），命令模块只剩参数解析与文案
-- [ ] 6.2 收口 4 处重复的"代理未运行警告"为 cli 层共享 helper（npm/git/env/docker 四处替换）
-- [ ] 6.3 CI 的 npm on/off、git on/off 断言全部保持绿（不改断言本身）
+- [x] 6.1 npm/git 的 on/off/status 改走 adapter（set 自动记快照、off 自动清段），命令模块只剩参数解析与文案
+- [x] 6.2 收口"代理未运行警告"为 cli 层共享 helper（npm/git 两处逐字重复已替换；env 的变体走 stderr 因其 stdout 被 eval，docker 的是网关探测语义不同——二者为刻意契约，不属同源重复，保留）
+- [x] 6.3 CI 的 npm on/off、git on/off 断言全部保持绿（不改断言本身）
 
 ## 7. 切片七：docker 命令迁移（第③步）
 

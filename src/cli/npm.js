@@ -1,6 +1,7 @@
 // dss npm on|off — 配置/取消 npm 代理
 // dss npm mirror <name>|off|status — 切换/恢复/查看 npm 镜像源
-const { resolveProxyAddress, resolveCertPaths, runCommand, probePort, updateSnapshot, clearSnapshotSection, readSnapshot, writeSnapshot } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, runCommand, warnIfProxyDown, readSnapshot, writeSnapshot } = require('./utils')
+const { adapters } = require('./tool-config')
 
 const NPM_OFFICIAL = 'https://registry.npmjs.org'
 const NPM_MIRRORS = {
@@ -25,19 +26,7 @@ async function run (args) {
 async function enable (args) {
   const addr = resolveProxyAddress(args)
   const useMitm = args.includes('--mitm')
-
-  // 探测代理是否在运行（仅提示，不阻断）
-  const httpUp = await probePort(addr.host, addr.httpPort)
-  if (!httpUp) {
-    console.log(`⚠️  代理似乎未在运行 (${addr.host}:${addr.httpPort} 未监听)`)
-    console.log('   如果代理未启动，npm 将无法联网。建议先运行: dss')
-    console.log('')
-  }
-  if (!addr.isDefaultPort) {
-    console.log(`ℹ️  使用非默认端口 (来自${addr.configPath ? '配置文件' : 'PORT 环境变量'})，`)
-    console.log('   请确认代理启动时使用了相同的配置')
-    console.log('')
-  }
+  await warnIfProxyDown(addr, 'npm')
 
   const httpProxy = `http://${addr.host}:${addr.httpPort}`
   const tasks = [
@@ -55,44 +44,39 @@ async function enable (args) {
     tasks.push(['cafile', certPath])
   }
 
-  for (const [key, value] of tasks) {
-    const r = await runCommand('npm', ['config', 'set', key, value], { shell: true })
-    if (!r.ok) {
-      console.error(`❌ npm config set ${key} 失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
+  // 写入 + 快照记录原子化在 adapter 内(供 dss stop / dss restore 智能恢复)
+  const r = await adapters.npm.setProxy(Object.fromEntries(tasks))
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
+    process.exit(1)
+  }
+  for (const [key, value] of r.written) {
     console.log(`✅ npm config set ${key} ${value}`)
   }
 
   console.log('')
   console.log(useMitm ? 'npm 已配置为 MITM 加速模式（需已安装 CA 证书）' : 'npm 已配置为简单代理模式（HTTP 隧道，无需证书）')
   console.log('取消配置: dss npm off')
-
-  // 记录本次写入的实际值，供 dss stop / dss restore 智能恢复
-  updateSnapshot('npm', Object.fromEntries(tasks))
 }
 
 async function disable () {
-  const keys = ['proxy', 'https-proxy', 'cafile']
-  for (const key of keys) {
-    const r = await runCommand('npm', ['config', 'delete', key], { shell: true })
-    if (!r.ok) {
-      console.error(`❌ npm config delete ${key} 失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
+  const r = await adapters.npm.clearProxy()
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
+    process.exit(1)
   }
-  clearSnapshotSection('npm')
   console.log('✅ npm 代理配置已清除 (proxy / https-proxy / cafile)')
 }
 
 async function showStatus () {
-  const keys = ['proxy', 'https-proxy', 'cafile', 'registry']
+  const r = await adapters.npm.read()
+  const label = (v) => (r.ok ? (v != null ? v : '(未设置)') : '获取失败')
+  const v = (r.ok && r.values) || {}
   console.log('当前 npm 配置:')
-  for (const key of keys) {
-    const r = await runCommand('npm', ['config', 'get', key], { shell: true })
-    const value = r.ok ? (r.stdout === 'null' || r.stdout === 'undefined' ? '(未设置)' : r.stdout) : '获取失败'
-    console.log(`  ${key}: ${value}`)
-  }
+  console.log(`  proxy: ${label(v.http)}`)
+  console.log(`  https-proxy: ${label(v.https)}`)
+  console.log(`  cafile: ${label(v.ca)}`)
+  console.log(`  registry: ${label(v.mirror)}`)
 }
 
 function help () {
