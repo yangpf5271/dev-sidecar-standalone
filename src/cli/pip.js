@@ -1,9 +1,10 @@
 // dss pip mirror <name>|off|status — 切换/恢复/查看 pip 镜像源
 //
 // 只提供 https 镜像（不引入 trusted-host，避免跳过证书校验的安全降级）。
-// 与 npm 镜像同理：首次切换前快照原值，off 恢复快照而非硬编码官方源，
-// 企业内网源不会被覆盖丢失。
-const { runCommand, readSnapshot, writeSnapshot } = require('./utils')
+// 切换/恢复/快照保护由镜像引擎单点实现（tool-config/mirror-engine），
+// 命令层只保留表与文案。
+const { runCommand } = require('./utils')
+const { createMirrorEngine } = require('./tool-config/mirror-engine')
 
 const PIP_OFFICIAL = 'https://pypi.org/simple/'
 const PIP_MIRRORS = {
@@ -13,6 +14,14 @@ const PIP_MIRRORS = {
   nju: { name: '南京大学', url: 'https://mirror.nju.edu.cn/pypi/web/simple/' },
 }
 
+// pip adapter 持有命令探测/读写知识; 引擎经 require 工厂注入默认实例
+const mirrorEngine = createMirrorEngine({
+  name: 'pip',
+  official: PIP_OFFICIAL,
+  mirrors: PIP_MIRRORS,
+  adapter: require('./tool-config').adapters.pip,
+})
+
 /** 探测可用的 pip 命令（pip / pip3），返回命令名或 null */
 async function detectPip () {
   for (const cmd of ['pip', 'pip3']) {
@@ -20,11 +29,6 @@ async function detectPip () {
     if (r.ok) return cmd
   }
   return null
-}
-
-async function getIndexUrl (pipCmd) {
-  const r = await runCommand(pipCmd, ['config', 'get', 'global.index-url'])
-  return r.ok ? r.stdout.trim() : null
 }
 
 async function run (args) {
@@ -36,50 +40,38 @@ async function run (args) {
 
   const action = args[0]
   if (action === 'mirror' || action === undefined) {
-    return mirror(pipCmd, args[0] === 'mirror' ? args.slice(1) : args)
+    return mirror(args[0] === 'mirror' ? args.slice(1) : args)
   }
-  if (action === 'status') return mirrorStatus(pipCmd)
+  if (action === 'status') return mirrorStatus()
   if (action === 'off') {
     // dss pip off = 镜像恢复的快捷方式
-    return mirrorOff(pipCmd)
+    return mirrorOff()
   }
   help()
   process.exit(1)
 }
 
-async function mirror (pipCmd, args) {
+async function mirror (args) {
   const action = args[0]
-  if (!action || action === 'status') return mirrorStatus(pipCmd)
-  if (action === 'off') return mirrorOff(pipCmd)
+  if (!action || action === 'status') return mirrorStatus()
+  if (action === 'off') return mirrorOff()
 
-  const m = PIP_MIRRORS[action]
-  if (!m) {
-    console.error(`未知镜像: ${action}`)
-    console.error(`可选: ${Object.keys(PIP_MIRRORS).join(' / ')}, off(恢复), status(查看)`)
+  const r = await mirrorEngine.switch(action)
+  if (!r.ok) {
+    if (r.error === 'unknown-mirror') {
+      console.error(`未知镜像: ${action}`)
+      console.error(`可选: ${r.available.join(' / ')}, off(恢复), status(查看)`)
+    } else {
+      console.error(`❌ ${r.error}`)
+    }
     process.exit(1)
   }
-
-  const current = await getIndexUrl(pipCmd)
-  if (current === m.url) {
-    console.log(`pip 源已经是 ${m.name} (${m.url})`)
+  if (!r.changed) {
+    console.log(`pip 源已经是 ${PIP_MIRRORS[action].name} (${PIP_MIRRORS[action].url})`)
     return
   }
-
-  // 首次切换时快照原值（重复切换不覆盖快照）
-  const snap = readSnapshot()
-  if (!snap.mirror) snap.mirror = {}
-  if (!snap.mirror.pip) {
-    snap.mirror.pip = { indexUrl: current }
-    writeSnapshot(snap)
-  }
-
-  const r = await runCommand(pipCmd, ['config', 'set', 'global.index-url', m.url])
-  if (!r.ok) {
-    console.error(`❌ pip config set index-url 失败: ${r.error || r.stderr}`)
-    process.exit(1)
-  }
-  console.log(`✅ pip 源已切换: ${m.name}`)
-  console.log(`   ${current || '(未设置)'}  →  ${m.url}`)
+  console.log(`✅ pip 源已切换: ${r.entryName}`)
+  console.log(`   ${r.from || '(未设置)'}  →  ${r.to}`)
   console.log('')
   console.log('说明: 镜像同步有延迟，刚发布的包可能尚未同步；')
   console.log('      Ubuntu 23.04+/Debian 12 等系统的 pip 受 PEP 668 限制，')
@@ -87,46 +79,27 @@ async function mirror (pipCmd, args) {
   console.log('恢复: dss pip mirror off')
 }
 
-async function mirrorOff (pipCmd) {
-  const snap = readSnapshot()
-  const saved = snap.mirror && snap.mirror.pip ? snap.mirror.pip.indexUrl : null
-  const hasSaved = saved != null && saved !== 'null' && saved !== ''
-
-  if (hasSaved) {
-    const r = await runCommand(pipCmd, ['config', 'set', 'global.index-url', saved])
-    if (!r.ok) {
-      console.error(`❌ 恢复 pip 源失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
-    console.log(`✅ pip 源已恢复: ${saved}（来自切换前快照）`)
-  } else {
-    const r = await runCommand(pipCmd, ['config', 'unset', 'global.index-url'])
-    // unset 未设置的键返回非 0，属正常
-    if (!r.ok && !/not exist|no such/i.test(r.stderr || '')) {
-      console.error(`❌ 恢复 pip 源失败: ${r.error || r.stderr}`)
-      process.exit(1)
-    }
-    console.log(`✅ pip 源已清除（将使用默认官方源 ${PIP_OFFICIAL}）`)
+async function mirrorOff () {
+  const r = await mirrorEngine.off()
+  if (!r.ok) {
+    console.error(`❌ 恢复 pip 源失败: ${r.error}`)
+    process.exit(1)
   }
-
-  if (snap.mirror) {
-    delete snap.mirror.pip
-    if (Object.keys(snap.mirror).length === 0) delete snap.mirror
-    writeSnapshot(snap)
+  if (r.saved) {
+    console.log(`✅ pip 源已恢复: ${r.saved}（来自切换前快照）`)
+  } else {
+    console.log(`✅ pip 源已清除（将使用默认官方源 ${PIP_OFFICIAL}）`)
   }
 }
 
-async function mirrorStatus (pipCmd) {
-  const current = await getIndexUrl(pipCmd)
-  const snap = readSnapshot()
-  const saved = snap.mirror && snap.mirror.pip ? snap.mirror.pip.indexUrl : null
-  const known = Object.entries(PIP_MIRRORS).find(([, v]) => v.url === current)
+async function mirrorStatus () {
+  const r = await mirrorEngine.status()
 
   console.log('pip 镜像源:')
-  console.log(`  当前: ${current || '(未设置，默认官方源)'}`)
-  if (known) console.log(`        (${known[1].name})`)
-  if (saved && saved !== 'null' && saved !== '') {
-    console.log(`  切换前原值: ${saved}（dss pip mirror off 可恢复）`)
+  console.log(`  当前: ${r.current || '(未设置，默认官方源)'}`)
+  if (r.known) console.log(`        (${r.known})`)
+  if (r.saved) {
+    console.log(`  切换前原值: ${r.saved}（dss pip mirror off 可恢复）`)
   }
   console.log('')
   console.log('可用镜像(均为 https，无需 trusted-host):')

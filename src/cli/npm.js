@@ -1,7 +1,8 @@
 // dss npm on|off — 配置/取消 npm 代理
 // dss npm mirror <name>|off|status — 切换/恢复/查看 npm 镜像源
-const { resolveProxyAddress, resolveCertPaths, runCommand, warnIfProxyDown, readSnapshot, writeSnapshot } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, warnIfProxyDown } = require('./utils')
 const { adapters } = require('./tool-config')
+const { createMirrorEngine } = require('./tool-config/mirror-engine')
 
 const NPM_OFFICIAL = 'https://registry.npmjs.org'
 const NPM_MIRRORS = {
@@ -103,65 +104,47 @@ function help () {
 }
 
 // ---------------------------------------------------------------------------
-// 镜像源切换
+// 镜像源切换（引擎驱动：快照保护/恢复/清理单点实现，命令层只保留表与文案）
 // ---------------------------------------------------------------------------
-
-async function getRegistry () {
-  const r = await runCommand('npm', ['config', 'get', 'registry'], { shell: true })
-  return r.ok ? r.stdout.trim() : null
-}
-
-async function getProxyState () {
-  const r = await runCommand('npm', ['config', 'get', 'proxy'], { shell: true })
-  return r.ok && r.stdout && r.stdout !== 'null' && r.stdout !== 'undefined' ? r.stdout.trim() : null
-}
 
 /** 冲突提示：镜像国内直连可达，配合代理使用是双重跳转 */
 async function warnProxyConflict () {
-  const proxy = await getProxyState()
+  const r = await adapters.npm.read()
+  const proxy = r.ok ? r.values.http : null
   if (proxy) {
     console.log(`ℹ️  当前 npm 配置了代理 (${proxy})，镜像源无需配合代理使用，`)
     console.log('   同时使用会双重跳转反而可能变慢，建议 dss npm off 后仅用镜像')
   }
 }
 
-/** 首次切换时快照原值（重复切换不覆盖快照），off 恢复快照而非硬编码官方源 */
-function saveMirrorSnapshot (current) {
-  const snap = readSnapshot()
-  if (!snap.mirror) snap.mirror = {}
-  if (!snap.mirror.npm) {
-    snap.mirror.npm = { registry: current }
-    writeSnapshot(snap)
-  }
-}
+const mirrorEngine = createMirrorEngine({
+  name: 'npm',
+  official: NPM_OFFICIAL,
+  mirrors: NPM_MIRRORS,
+  adapter: adapters.npm,
+})
 
 async function mirror (args) {
   const action = args[0]
   if (!action || action === 'status') return mirrorStatus()
   if (action === 'off') return mirrorOff()
 
-  const m = NPM_MIRRORS[action]
-  if (!m) {
-    console.error(`未知镜像: ${action}`)
-    console.error(`可选: ${Object.keys(NPM_MIRRORS).join(' / ')}, off(恢复), status(查看)`)
+  const r = await mirrorEngine.switch(action)
+  if (!r.ok) {
+    if (r.error === 'unknown-mirror') {
+      console.error(`未知镜像: ${action}`)
+      console.error(`可选: ${r.available.join(' / ')}, off(恢复), status(查看)`)
+    } else {
+      console.error(`❌ ${r.error}`)
+    }
     process.exit(1)
   }
-
-  const current = await getRegistry()
-  if (current === m.url) {
-    console.log(`npm 源已经是 ${m.name} (${m.url})`)
+  if (!r.changed) {
+    console.log(`npm 源已经是 ${NPM_MIRRORS[action].name} (${NPM_MIRRORS[action].url})`)
     return
   }
-
-  saveMirrorSnapshot(current)
-
-  const r = await runCommand('npm', ['config', 'set', 'registry', m.url], { shell: true })
-  if (!r.ok) {
-    console.error(`❌ npm config set registry 失败: ${r.error || r.stderr}`)
-    process.exit(1)
-  }
-  console.log(`✅ npm 源已切换: ${m.name}`)
-  console.log(`   ${current || '(未设置)'}  →  ${m.url}`)
+  console.log(`✅ npm 源已切换: ${r.entryName}`)
+  console.log(`   ${r.from || '(未设置)'}  →  ${r.to}`)
   await warnProxyConflict()
   console.log('')
   console.log('⚠️  注意: 镜像为只读，发布 npm 包时需临时指定官方源:')
@@ -171,33 +154,20 @@ async function mirror (args) {
 }
 
 async function mirrorOff () {
-  const snap = readSnapshot()
-  const saved = snap.mirror && snap.mirror.npm ? snap.mirror.npm.registry : null
-  const target = saved || NPM_OFFICIAL
-
-  const r = await runCommand('npm', ['config', 'set', 'registry', target], { shell: true })
+  const r = await mirrorEngine.off()
   if (!r.ok) {
-    console.error(`❌ 恢复 npm 源失败: ${r.error || r.stderr}`)
+    console.error(`❌ 恢复 npm 源失败: ${r.error}`)
     process.exit(1)
   }
-  if (snap.mirror) {
-    delete snap.mirror.npm
-    if (Object.keys(snap.mirror).length === 0) delete snap.mirror
-    writeSnapshot(snap)
-  }
-  console.log(`✅ npm 源已恢复: ${target}${saved ? '（来自切换前快照）' : ''}`)
+  console.log(`✅ npm 源已恢复: ${r.target || NPM_OFFICIAL}${r.saved ? '（来自切换前快照）' : ''}`)
 }
 
 async function mirrorStatus () {
-  const current = await getRegistry()
-  const snap = readSnapshot()
-  const saved = snap.mirror && snap.mirror.npm ? snap.mirror.npm.registry : null
-  const known = Object.entries(NPM_MIRRORS).find(([, v]) => v.url === current)
-
+  const r = await mirrorEngine.status()
   console.log('npm 镜像源:')
-  console.log(`  当前: ${current || '(未设置)'}`)
-  if (known) console.log(`        (${known[1].name})`)
-  if (saved) console.log(`  切换前原值: ${saved}（dss npm mirror off 可恢复）`)
+  console.log(`  当前: ${r.current || '(未设置)'}`)
+  if (r.known) console.log(`        (${r.known})`)
+  if (r.saved) console.log(`  切换前原值: ${r.saved}（dss npm mirror off 可恢复）`)
   console.log('')
   console.log('可用镜像:')
   for (const [key, m] of Object.entries(NPM_MIRRORS)) {
