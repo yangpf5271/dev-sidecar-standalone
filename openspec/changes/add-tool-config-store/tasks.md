@@ -30,9 +30,9 @@
 
 ## 5. 切片五：status 切换到 tool-config（第①步完成，分叉消除）
 
-- [ ] 5.1 status 的 collectTools 改用 adapters.classify（结构化 mode → 命令层中文文案），镜像标签逻辑暂留原地
-- [ ] 5.2 切换前后 status 输出逐行对照一致（同机同状态下 diff 为空或仅有预期的边界值差异）
-- [ ] 5.3 CONTEXT.md 随本切片入库，README/USAGE 无需变化（外部行为不变）
+- [x] 5.1 status 的 collectTools 改用 adapters.classify（结构化 mode → 命令层中文文案），镜像标签逻辑暂留原地
+- [x] 5.2 切换前后 status 输出逐行对照一致（同机同状态下 diff 为空或仅有预期的边界值差异：docker build 徽标从"已注入"统一为 classify 词汇，语义更准）
+- [x] 5.3 CONTEXT.md 随本切片入库，README/USAGE 无需变化（外部行为不变）
 
 ## 6. 切片六：npm/git 命令改薄（第②步）
 

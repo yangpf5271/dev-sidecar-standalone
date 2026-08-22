@@ -1,7 +1,5 @@
 // dss status — 全景状态面板：进程 / 证书系统信任 / 各工具代理 / 镜像源 / Docker
 const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
 const pkg = require('../../package.json')
 const {
   IS_WIN,
@@ -15,6 +13,7 @@ const {
   isProcessAlive,
   verifyProcessIdentity,
 } = require('./utils')
+const { adapters } = require('./tool-config')
 const { NPM_MIRRORS, NPM_OFFICIAL } = require('./npm')
 const { PIP_MIRRORS, PIP_OFFICIAL } = require('./pip')
 const { detectResidue } = require('./restore-config')
@@ -89,27 +88,27 @@ async function run (args) {
 
 // ---------------------------------------------------------------------------
 // 各工具状态聚合（全部并行探测，单项失败不影响其他）
+// 匹配语义来自 tool-config store 的 classify(宽松展示语义) — 与清理同源
 // ---------------------------------------------------------------------------
-
 async function collectTools (addr) {
   const snap = readSnapshot()
-  const [npm, git, pip, dockerBuild, dockerPull] = await Promise.all([
-    collectNpm(addr),
-    collectGit(addr),
-    collectPip(),
-    collectDockerBuild(),
+  const [npmR, gitR, pipR, dockerR, dockerPull] = await Promise.all([
+    adapters.npm.classify(addr),
+    adapters.git.classify(addr),
+    adapters.pip.classify(addr),
+    adapters.docker.classify(addr),
     collectDockerPull(),
   ])
 
   const proxyParts = [
-    `npm ${badge(npm.mode, npm.extra)}`,
-    `git ${badge(git.mode, git.extra)}`,
-    `pip ${badge(pip.mode, pip.extra)}`,
-    `docker build ${badge(dockerBuild.mode, dockerBuild.extra)}`,
+    `npm ${proxyBadge(npmR)}`,
+    `git ${proxyBadge(gitR)}`,
+    `pip ${proxyBadge(pipR)}`,
+    `docker build ${proxyBadge(dockerR)}`,
   ]
   const mirrorParts = [
-    `npm ${mirrorLabel(npm.registry, NPM_OFFICIAL, NPM_MIRRORS, snap.mirror && snap.mirror.npm)}`,
-    `pip ${mirrorLabel(pip.indexUrl, PIP_OFFICIAL, PIP_MIRRORS, snap.mirror && snap.mirror.pip)}`,
+    `npm ${mirrorLabel(mirrorOf(npmR), NPM_OFFICIAL, NPM_MIRRORS, snap.mirror && snap.mirror.npm)}`,
+    `pip ${mirrorLabel(mirrorOf(pipR), PIP_OFFICIAL, PIP_MIRRORS, snap.mirror && snap.mirror.pip)}`,
   ]
   const dockerParts = [
     `pull 镜像源 ${dockerPull.mode ? `✅ ${dockerPull.extra}` : '未配置'}`,
@@ -123,10 +122,15 @@ async function collectTools (addr) {
   }
 }
 
-function badge (mode, extra) {
-  if (!mode) return '—'
-  if (mode === 'other') return `⚠️ ${extra}`
-  return `✅ ${mode}`
+const mirrorOf = (r) => (r.ok && r.values ? r.values.mirror : null)
+
+/** classify 结果 → 展示徽标; 展示语义宽松, "看起来像就提醒"(other 显示原值) */
+function proxyBadge (r) {
+  if (!r || !r.ok || r.mode === 'none') return '—'
+  if (r.mode === 'other') return `⚠️ ${r.address}`
+  const mode = r.mode === 'mitm' ? 'MITM' : '隧道'
+  const caMissing = r.mode === 'mitm' && r.values && r.values.ca == null
+  return `✅ ${mode}${caMissing ? ' (缺 CA 配置)' : ''}`
 }
 
 /** 镜像源显示：官方 → 默认；已知镜像 → 名称(+dss 标记)；其他 → 原样(企业源等)。尾部斜杠归一化后比较 */
@@ -137,86 +141,6 @@ function mirrorLabel (current, official, mirrors, snapshotSaved) {
   const known = Object.values(mirrors).find(m => norm(m.url) === norm(current))
   if (known) return snapshotSaved ? `${known.name} [dss切换]` : known.name
   return `${current} [自定义]`
-}
-
-async function npmGet (key) {
-  const r = await runCommand('npm', ['config', 'get', key], { shell: true })
-  if (!r.ok) return null
-  const v = (r.stdout || '').trim()
-  return (v && v !== 'null' && v !== 'undefined') ? v : null
-}
-
-async function collectNpm (addr) {
-  const [proxy, httpsProxy, cafile, registry] = await Promise.all([
-    npmGet('proxy'),
-    npmGet('https-proxy'),
-    npmGet('cafile'),
-    npmGet('registry'),
-  ])
-  return {
-    registry,
-    ...classifyProxy(proxy, httpsProxy, cafile, addr),
-  }
-}
-
-async function collectGit (addr) {
-  const get = async (key) => {
-    const r = await runCommand('git', ['config', '--global', '--get', key])
-    return r.ok && r.stdout ? r.stdout.trim() : null
-  }
-  const [httpProxy, httpsProxy, sslCAInfo] = await Promise.all([
-    get('http.proxy'),
-    get('https.proxy'),
-    get('http.sslCAInfo'),
-  ])
-  return classifyProxy(httpProxy, httpsProxy, sslCAInfo, addr)
-}
-
-/**
- * 按配置值分类代理模式：
- *  httpsProxy 指向 MITM 端口(+CA) → MITM；任一值含 HTTP 端口 → 隧道；
- *  有值但不指向本代理 → other(展示原值，便于发现残留的第三方代理)
- */
-function classifyProxy (proxy, httpsProxy, ca, addr) {
-  const any = httpsProxy || proxy
-  if (!any) return { mode: null }
-  if (httpsProxy && httpsProxy.includes(`:${addr.mitmPort}`)) {
-    return { mode: 'MITM', extra: ca ? null : '(缺 CA 配置)' }
-  }
-  if ((proxy && proxy.includes(`:${addr.httpPort}`)) ||
-      (httpsProxy && httpsProxy.includes(`:${addr.httpPort}`))) {
-    return { mode: '隧道' }
-  }
-  return { mode: 'other', extra: any }
-}
-
-async function collectPip () {
-  // pip / pip3 逐个探测（pip.js 的 detectPip 不导出，这里轻量重试）
-  let pipCmd = null
-  for (const cmd of ['pip', 'pip3']) {
-    const t = await runCommand(cmd, ['--version'])
-    if (t.ok) { pipCmd = cmd; break }
-  }
-  if (!pipCmd) return { mode: null, indexUrl: null }
-  const get = async (key) => {
-    const r = await runCommand(pipCmd, ['config', 'get', key])
-    return r.ok && r.stdout ? r.stdout.trim() : null
-  }
-  const [proxy, indexUrl] = await Promise.all([get('global.proxy'), get('global.index-url')])
-  return { mode: proxy ? '隧道' : null, extra: proxy, indexUrl }
-}
-
-/** 构建层代理：~/.docker/config.json proxies.default（dss docker on 注入） */
-function collectDockerBuild () {
-  try {
-    const file = path.join(os.homedir(), '.docker', 'config.json')
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    const def = data.proxies && data.proxies.default
-    if (def && (def.httpProxy || def.httpsProxy)) {
-      return { mode: '已注入', extra: def.httpProxy || def.httpsProxy }
-    }
-  } catch { /* 文件不存在或无 proxies 段 */ }
-  return { mode: null }
 }
 
 /** 拉取镜像源：Linux/mac 直接读 daemon.json；Windows 经 WSL 读（WSL 冷启动可能较慢，带超时防挂起） */
