@@ -1,11 +1,9 @@
 // dss status — 全景状态面板：进程 / 证书系统信任 / 各工具代理 / 镜像源 / Docker
-const fs = require('node:fs')
 const pkg = require('../../package.json')
 const {
   IS_WIN,
   resolveProxyAddress,
   resolveCertPaths,
-  runCommand,
   probePort,
   readPidFile,
   detectCertTrust,
@@ -15,6 +13,7 @@ const {
 const { adapters } = require('./tool-config')
 const { NPM_OFFICIAL, mirrorEngine: npmMirrorEngine } = require('./npm')
 const { PIP_OFFICIAL, mirrorEngine: pipMirrorEngine } = require('./pip')
+const pull = require('./docker-pull')
 const { detectResidue } = require('./restore-config')
 
 async function run (args) {
@@ -141,33 +140,19 @@ function mirrorLabel (st, official) {
   return `${st.current} [自定义]`
 }
 
-/** 拉取镜像源：Linux/mac 直接读 daemon.json；Windows 经 WSL 读（WSL 冷启动可能较慢，带超时防挂起） */
+/** 拉取镜像源：读取与解析来自 docker-pull 模块（Linux/mac 本机直读；Windows 经 WSL 穿透，模块内带超时防冷启动挂起） */
 async function collectDockerPull () {
-  const read = async () => {
-    if (!IS_WIN) {
-      try {
-        return fs.readFileSync('/etc/docker/daemon.json', 'utf8')
-      } catch {
-        return null
-      }
-    }
-    const r = await runCommand('wsl.exe', ['-e', 'cat', '/etc/docker/daemon.json'])
-    return r.ok ? r.stdout : null
-  }
-  const TIMEOUT = Symbol('timeout')
-  const content = await Promise.race([
-    read(),
-    new Promise(resolve => setTimeout(() => resolve(TIMEOUT), 8000)),
-  ])
-  if (content === TIMEOUT) return { mode: null, hint: 'WSL 检测超时，可稍后重试' }
-  if (!content) return { mode: null, hint: IS_WIN ? 'WSL 内无 daemon.json' : null }
-  try {
-    const mirrors = JSON.parse(content)['registry-mirrors']
-    if (Array.isArray(mirrors) && mirrors.length > 0) {
+  const r = IS_WIN ? await pull.readViaWsl() : pull.readLocal()
+  if (r.timeout) return { mode: null, hint: 'WSL 检测超时，可稍后重试' }
+  if (!r.content) return { mode: null, hint: IS_WIN ? 'WSL 内无 daemon.json' : null }
+  const doc = pull.parseDoc(r.content)
+  if (doc.ok) {
+    const mirrors = pull.parseMirrors(doc.data)
+    if (mirrors.length > 0) {
       return { mode: true, extra: `${mirrors[0]}${mirrors.length > 1 ? ` 等 ${mirrors.length} 个` : ''}` }
     }
-  } catch { /* daemon.json 损坏时不在此报错，dss docker 命令会处理 */ }
-  return { mode: null }
+  }
+  return { mode: null }   // daemon.json 损坏时不在此报错，dss docker 命令会处理
 }
 
 function help () {
