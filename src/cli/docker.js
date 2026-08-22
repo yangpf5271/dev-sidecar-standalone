@@ -335,6 +335,12 @@ function parseMirrorUrl (raw) {
   if (!/^https?:\/\//.test(url)) url = `https://${url}`
   try {
     const u = new URL(url)
+    // Docker 的 ValidateMirror 拒绝含 query/fragment 的 mirror,写入会导致 daemon 拒绝启动
+    if (u.search || u.hash) {
+      console.error(`❌ 镜像地址不能包含查询参数或片段: ${raw}`)
+      console.error('   Docker daemon 会拒绝此类 mirror 地址(无法启动)')
+      process.exit(1)
+    }
     return { url, host: u.hostname, origin: u.origin, pathBase: u.pathname.replace(/\/+$/, '') }
   } catch {
     console.error(`❌ 无效的镜像地址: ${raw}`)
@@ -392,17 +398,22 @@ async function cmdMirrorAdd (args) {
   const parsed = parseMirrorUrl(raw)
 
   // 路径前缀 token 模式需 Docker ≥ 24:旧版 daemon 会因 mirror 含路径拒绝启动,
-  // 写入即导致 docker 起不来——比拉取失败严重得多,必须前置拦截
+  // 写入即导致 docker 起不来——比拉取失败严重得多,必须前置拦截。
+  // 注意: Basic-auth 不能作为 mirror 的替代方案——dockerd 不会把 mirror 的
+  // docker login 凭证附加到 docker.io 拉取(moby#30880),401 后直接回退被墙官方源
   if (parsed.pathBase) {
     const ver = await dockerMajorVersion()
     if (ver != null && ver < 24) {
       console.error(`❌ 镜像地址含路径前缀(路径模式),但当前 Docker Engine 为 ${ver}.x`)
       console.error('   Docker ≤ 23.x 的 daemon 会因 registry-mirror 含路径而拒绝启动')
-      console.error('   方案: ① 改用 Basic 模式(docker login, 全版本兼容):')
-      console.error(`        docker login ${parsed.host} -u any -p <token> 后 add 不带路径的地址`)
-      console.error('   ② 升级 Docker ≥ 24   ③ 确认风险后 --force 强制写入')
+      console.error('   方案: ① Worker 侧不设 ACCESS_TOKEN(内网/个人使用)')
+      console.error('        ② 升级 Docker ≥ 24 后再使用路径模式')
+      console.error('        ③ 确认风险后 --force 强制写入')
       if (!force) process.exit(1)
       console.error('   (--force 已指定,继续写入,风险自负)')
+    } else if (ver == null) {
+      console.log('⚠️  无法探测 Docker 版本(docker 命令不可用?)')
+      console.log('   若 Docker ≤ 23.x,含路径的 mirror 会导致 daemon 拒绝启动')
     }
   }
 
@@ -631,8 +642,9 @@ function help () {
   console.log('拉取层(解决 docker pull,需 Linux/WSL + sudo):')
   console.log('  dss docker mirror add <url> [--force] [--cf] [--no-pin]')
   console.log('        健康检查 → CF 边缘优选 → hosts 钉定 → daemon.json 合并 → 重启 docker')
-  console.log('        带 token 的镜像源两种模式: Basic(推荐, docker login, 全版本兼容)')
-  console.log('        / 路径前缀 https://域名/<token>(需 Docker ≥ 24,旧版会拒绝启动)')
+  console.log('        公网鉴权用路径模式 https://域名/<token>(需 Docker ≥ 24)')
+  console.log('        (Basic/docker login 仅适用于直接 docker pull 域名/镜像,')
+  console.log('         不能用于 registry-mirrors — dockerd 不给 mirror 带凭证)')
   console.log('  dss docker mirror remove <url>   移除(或 remove off 移除全部)')
   console.log('  dss docker mirror refresh        重测优选 IP(变慢时执行)')
   console.log('  dss docker status                总览状态')

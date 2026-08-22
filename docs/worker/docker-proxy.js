@@ -2,15 +2,18 @@
  * Docker Hub Registry 代理 Worker — dev-sidecar-standalone 模板
  *
  * 部署教程见 docs/worker-deploy.md, 配置完成后:
- *   dss docker mirror add https://<你的域名>          (Basic 模式, 全 Docker 版本)
- *   dss docker mirror add https://<你的域名>/<token>  (路径模式, 需 Docker ≥ 24)
+ *   dss docker mirror add https://<你的域名>/<token>  (路径模式, registry-mirrors 公网推荐, 需 Docker ≥ 24)
+ *   dss docker mirror add https://<你的域名>          (无鉴权, 内网/个人使用)
  *
  * 可选环境变量(Worker Settings → Variables):
- *   ACCESS_TOKEN    访问令牌(自定义随机串)。留空 = 不鉴权。设置后支持两种认证:
- *                  A. Basic 模式(推荐, 全版本): 客户端执行一次
- *                     docker login <域名> -u any -p <token>
- *                  B. 路径模式(需 Docker Engine ≥ 24, 旧版 daemon 会因
- *                     mirror URL 含路径而拒绝启动): 地址带 /<token> 前缀
+ *   ACCESS_TOKEN    访问令牌(建议 openssl rand -hex 16 生成,仅字母数字,
+ *                  避免路径特殊字符与冒号)。留空 = 不鉴权。设置后两种认证:
+ *                  A. 路径模式(registry-mirrors 场景唯一可用): 地址带 /<token> 前缀,
+ *                     需 Docker Engine ≥ 24(旧版 daemon 因 mirror 含路径拒绝启动)
+ *                  B. Basic 模式: docker login <域名> -u any -p <token>。
+ *                     ⚠ 仅适用于 docker pull <域名>/<镜像> 的直接拉取——
+ *                     dockerd 不会把 mirror 凭证附加到 docker.io 拉取(moby#30880),
+ *                     registry-mirrors 配置此模式会 401 回退导致拉取失败
  *                  两者均不满足: /v2/ 返回 401 Basic 质询, 其余返回 404 伪装
  *   DOCKERHUB_AUTH  你的 Docker Hub 凭证 "username:personal-access-token"(仅 ASCII)。
  *                  填写后 Worker 用它向上游按仓库换取 Bearer token,
@@ -43,24 +46,28 @@ export default {
     try {
       const url = new URL(request.url)
       let path = url.pathname
-      let authorized = !env.ACCESS_TOKEN
 
       // ---- 可选鉴权 ----
+      // 注意: Basic 模式仅适用于 docker pull <本域名>/<镜像> 的直接拉取;
+      // registry-mirrors 场景 dockerd 不会携带 mirror 凭证(moby#30880),
+      // 必须使用路径前缀模式或关闭鉴权 —— 详见 docs/worker-deploy.md
       if (env.ACCESS_TOKEN) {
         const prefix = `/${env.ACCESS_TOKEN}`
         const authHeader = request.headers.get('Authorization') || ''
         if (path !== prefix && !path.startsWith(`${prefix}/`)) {
-          // 非 token 路径: 尝试 Basic 模式(any 用户名 + token 密码)
+          // 非 token 路径: 尝试 Basic 模式(密码 = ACCESS_TOKEN, 支持含冒号)
           let ok = false
           const m = authHeader.match(/^Basic\s+(.+)$/i)
           if (m) {
             try {
-              const [user, pass] = atob(m[1]).split(':')
+              const decoded = atob(m[1])
+              const idx = decoded.indexOf(':')
+              const pass = idx >= 0 ? decoded.slice(idx + 1) : decoded
               ok = pass === env.ACCESS_TOKEN
             } catch { ok = false }
           }
           if (!ok) {
-            // /v2/ 返回 401 Basic 质询(触发客户端 docker login 流程), 其余 404 伪装
+            // /v2/ 返回 401 Basic 质询(供直接拉取场景的 docker login), 其余 404 伪装
             if (path === '/v2/' || path === '/v2') {
               return new Response('{"errors":[{"code":"UNAUTHORIZED"}]}', {
                 status: 401,
@@ -73,13 +80,12 @@ export default {
             }
             return new Response('Not Found', { status: 404 })
           }
-          authorized = true
         } else {
           path = path.slice(prefix.length) || '/' // 路径模式: 剥离 token 前缀
         }
       }
 
-      if (!path.startsWith('/v2/')) {
+      if (path !== '/v2' && !path.startsWith('/v2/')) {
         return new Response('Not Found', { status: 404 })
       }
 
@@ -182,13 +188,14 @@ async function proxyManifest (request, env, ctx, path, search) {
   return resp
 }
 
-/** 解析 Range 头为 {offset, length}(仅支持 bytes=a- 与 bytes=a-b) */
+/** 解析 Range 头为 {offset, length, end}(仅支持 bytes=a- 与 bytes=a-b) */
 function parseRange (rangeHeader, fullLength) {
   const m = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader || '')
   if (!m) return null
   const offset = Number(m[1])
   const end = m[2] ? Number(m[2]) : (fullLength ? fullLength - 1 : null)
   if (Number.isNaN(offset) || offset < 0) return null
+  if (end != null && end < offset) return null // 倒序区间视为无效
   const length = end != null ? end - offset + 1 : null
   return { offset, length, end }
 }
@@ -210,8 +217,9 @@ async function proxyBlob (request, env, ctx, path, search) {
         const length = Math.min(range.length || meta.size - range.offset, meta.size - range.offset)
         const ranged = await r2.get(key, { range: { offset: range.offset, length } }).catch(() => null)
         if (ranged) {
+          // 注意: R2 ranged get 返回的 size 是对象总长而非分片长度, Content-Length 必须用 length
           const end = range.end != null ? Math.min(range.end, meta.size - 1) : meta.size - 1
-          return rangeResponse(ranged.body, ranged.size, { offset: range.offset, end }, meta.size, request.method)
+          return rangeResponse(ranged.body, length, { offset: range.offset, end }, meta.size, request.method)
         }
       }
       // R2 无此对象或 Range 不合法 → 落到回源

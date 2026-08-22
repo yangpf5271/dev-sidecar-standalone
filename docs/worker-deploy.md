@@ -33,23 +33,13 @@ Worker → `Settings` → `Variables and Secrets`：
 
 | 变量 | 建议 | 说明 |
 |------|------|------|
-| `ACCESS_TOKEN` | **建议设置** | 访问令牌（自定义随机串，防域名泄露后被白嫖）。设置后支持两种认证方式（见下节） |
+| `ACCESS_TOKEN` | 公网建议设置 | 访问令牌，防域名泄露后被白嫖。**用 `openssl rand -hex 16` 生成（仅字母数字）**——路径模式要求 URL 安全且不能含冒号。认证方式见下节 |
 | `DOCKERHUB_AUTH` | 建议 | 你的 Docker Hub `用户名:访问令牌`（hub.docker.com → Account Settings → Personal access tokens 创建，只读权限即可，**仅 ASCII 字符**）。避开匿名拉取限额 |
 | `R2_CACHE` | 可选 | layer 缓存，见下下节 |
 
-### 5. 接入认证（设置 ACCESS_TOKEN 时二选一）
+### 5. 接入认证（设置 ACCESS_TOKEN 时）
 
-**方式 A：Basic 模式（推荐，兼容所有 Docker 版本）**
-
-```bash
-# 客户端一次性登录（用户名任意，密码 = ACCESS_TOKEN）
-docker login mirror.你的域名.com -u any -p <token>
-
-# 之后 mirror 地址不带路径
-dss docker mirror add https://mirror.你的域名.com
-```
-
-**方式 B：路径前缀模式（需 Docker Engine ≥ 24）**
+**方式 A：路径前缀模式（registry-mirrors 场景唯一可用，需 Docker Engine ≥ 24）**
 
 ```bash
 dss docker mirror add https://mirror.你的域名.com/<token>
@@ -57,10 +47,22 @@ dss docker mirror add https://mirror.你的域名.com/<token>
 
 > ⚠️ **版本要求**：Docker ≤ 23.x 的 daemon 会因 registry-mirror 地址含路径而**拒绝启动**
 >（`invalid mirror: path...`，[moby#36598](https://github.com/moby/moby/issues/36598)）。
-> `dss docker mirror add` 会检测你的 Docker 版本并在旧版本上阻止路径模式（`--force` 可越过）。
-> 不确定版本就用方式 A。
+> `dss docker mirror add` 会检测 Docker 版本并在旧版本上阻止（`--force` 可越过）。
+> 旧版 Docker 的选择：不设 `ACCESS_TOKEN`（内网/个人低风险）或升级 Docker。
 
-两种方式可以共存：带 token 路径的请求走路径模式，带 Basic 头的请求走 Basic 模式。
+**方式 B：Basic 模式（仅适用于直接拉取，不能用于 registry-mirrors！）**
+
+```bash
+docker login mirror.你的域名.com -u any -p <token>
+docker pull mirror.你的域名.com/library/nginx   # 直接引用本域名拉取
+```
+
+> ⚠️ **重要**：dockerd **不会**把 mirror 域名的登录凭证附加到 `docker pull nginx` 这类
+> docker.io 镜像拉取上（[moby#30880](https://github.com/moby/moby/issues/30880)，2017 年至今未实现）。
+> 把 Basic 模式的地址配进 `registry-mirrors` 会得到 401 → 回退被墙官方源 → 拉取失败。
+> registry-mirrors + 公网鉴权只能用方式 A。
+
+两种方式可共存：带 token 路径的请求走路径模式，带 Basic 头的请求走 Basic 模式。
 未认证的 `/v2/` 返回 401 Basic 质询，其余路径一律 404（伪装普通站点，不暴露代理存在）。
 
 ### 6. R2 layer 缓存（可选）
@@ -81,24 +83,23 @@ dss docker mirror add https://mirror.你的域名.com/<token>
 ### 7. 验证
 
 ```bash
-# 未设 token:
+# 未设 token: 期望 200
 curl -i https://mirror.你的域名.com/v2/
-# 期望: HTTP 200, 响应头含 Docker-Distribution-API-Version: registry/2.0
 
-# 设置了 token(Basic 模式): 期望 401 + WWW-Authenticate: Basic
+# 设置了 token: /v2/ 期望 401 + WWW-Authenticate: Basic(质询)
 curl -i https://mirror.你的域名.com/v2/
-curl -u any:<token> -i https://mirror.你的域名.com/v2/   # 期望 200
-
-# 设置了 token(路径模式): 期望 200; 错误 token → 404
-curl -i https://mirror.你的域名.com/<token>/v2/
+curl -u any:<token> -i https://mirror.你的域名.com/v2/   # Basic 直接拉取模式 → 200
+curl -i https://mirror.你的域名.com/<token>/v2/          # 路径模式 → 200; 错误 token → 404
 ```
 
 ### 8. 接入 dss
 
 ```bash
-dss docker mirror add https://mirror.你的域名.com          # Basic 模式
-# 或
-dss docker mirror add https://mirror.你的域名.com/<token>   # 路径模式(Docker ≥ 24)
+# 公网 + 鉴权: 路径模式(Docker ≥ 24)
+dss docker mirror add https://mirror.你的域名.com/<token>
+
+# 内网/个人使用: Worker 不设 ACCESS_TOKEN, 直接
+dss docker mirror add https://mirror.你的域名.com
 
 docker info | grep -A3 "Registry Mirrors"
 docker pull hello-world
@@ -125,4 +126,4 @@ docker logout mirror.你的域名.com && docker login ... -p <新token>   # Basi
 
 **Q: 和公共镜像站比优势？** 完全自主、任意公共镜像可拉、可加鉴权、可加 R2 缓存。劣势：速度受 CF 免费版链路影响。
 
-**Q: 认证流程是怎样的？** dockerd 拉取时会先 GET `/v2/`——Worker 返回 200（无质询头），dockerd 因此**不会**自己去连被墙的 `auth.docker.io`；Worker 在服务端按仓库向上游换取 token 并代理全部请求。这是社区验证过的标准模式。
+**Q: 认证流程是怎样的？** dockerd 拉取时会先 GET `/v2/`——无鉴权/路径模式下 Worker 返回 200（无质询头），dockerd 因此**不会**自己去连被墙的 `auth.docker.io`；Worker 在服务端按仓库向上游换取 token 并代理全部请求。这是社区验证过的标准模式。（Basic 模式的 401 质询会触发客户端凭证查询，但如上所述 mirror 场景 dockerd 查不到凭证，所以 Basic 仅限直接拉取用途。）
