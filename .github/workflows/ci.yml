@@ -343,3 +343,17 @@ jobs:
           "
 
           echo "docker build-layer tests passed"
+
+      # Docker 拉取层: daemon.json 真实读取链路 (docker-pull 模块 readLocal + parseMirrors, 零网络不 flaky)
+      - name: Docker pull-layer read path (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          sudo mkdir -p /etc/docker
+          sudo tee /etc/docker/daemon.json <<'JSON'
+          { "registry-mirrors": ["https://mirror-ci.example", "https://mirror-ci2.example"] }
+          JSON
+          node index.js status | grep -q 'mirror-ci.example 等 2 个'
+          sudo rm -f /etc/docker/daemon.json
+          node index.js status > /dev/null
+          echo "docker pull-layer read path passed"
