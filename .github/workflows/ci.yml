@@ -152,9 +152,11 @@ jobs:
           set -e
 
           # 预埋第三方代理值(占 dss 不覆盖的键: npm cafile / git https.proxy)
-          # 注意: 值用相对名,避免 Git Bash 的 MSYS 路径转换改写 /tmp/... 绝对路径
+          # 注意: npm 对路径类配置会归一化(相对路径解析为绝对路径),
+          # 断言用「前后值一致」而非字面值
           npm config set cafile corp-ca.crt
           git config --global https.proxy http://corp-proxy.example:8080
+          CAFILE_BEFORE=$(npm config get cafile)
 
           # 守护启动: PID 文件应出现
           node index.js start | grep "Daemon PID"
@@ -184,8 +186,8 @@ jobs:
           test "$(npm config get proxy)" = 'null'
           test "$(npm config get https-proxy)" = 'null'
           test -z "$(git config --global --get http.proxy)"
-          # 第三方值不受影响
-          test "$(npm config get cafile)" = 'corp-ca.crt'
+          # 第三方值不受影响(前后值一致)
+          test "$(npm config get cafile)" = "$CAFILE_BEFORE"
           test "$(git config --global --get https.proxy)" = 'http://corp-proxy.example:8080'
 
           # 日志文件应有内容
