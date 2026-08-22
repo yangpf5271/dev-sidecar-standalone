@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['18', '20', '22']
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Syntax check all source files
+        run: |
+          set -e
+          for f in index.js $(find src -name '*.js'); do
+            node --check "$f" || { echo "SYNTAX FAIL: $f"; exit 1; }
+          done
+          echo "all syntax checks passed"
+
+      - name: npm pack contents check
+        run: npm pack --dry-run
+
+      # CLI 子命令测试(代理未启动、证书未生成状态)
+      # 断言只匹配 ASCII 内容,避免 Windows 控制台编码问题
+      - name: CLI tests (proxy stopped, no cert)
+        run: |
+          set -e
+
+          # dss env on/off: 三种 shell 格式
+          node index.js env on --shell bash        | grep -qx 'export HTTP_PROXY=http://127.0.0.1:31180'
+          node index.js env on --shell cmd         | grep -qx 'set HTTP_PROXY=http://127.0.0.1:31180'
+          node index.js env on --shell powershell  | grep -q  "\$env:HTTP_PROXY='http://127.0.0.1:31180'"
+          node index.js env off --shell bash       | grep -qx 'unset HTTP_PROXY'
+
+          # eval 真实生效验证
+          eval "$(node index.js env on --shell bash)"
+          test "$HTTP_PROXY" = 'http://127.0.0.1:31180'
+          test "$HTTPS_PROXY" = 'http://127.0.0.1:31181'
+          eval "$(node index.js env off --shell bash)"
+          test -z "$HTTP_PROXY"
+
+          # dss npm on/off 全周期 + 配置断言
+          node index.js npm on > /dev/null 2>&1
+          test "$(npm config get proxy)" = 'http://127.0.0.1:31180'
+          test "$(npm config get https-proxy)" = 'http://127.0.0.1:31180'
+          node index.js npm off > /dev/null 2>&1
+          test "$(npm config get proxy)" = 'null'
+
+          # dss git on --simple + off
+          node index.js git on --simple > /dev/null 2>&1
+          test "$(git config --global --get http.proxy)" = 'http://127.0.0.1:31180'
+          node index.js git off > /dev/null 2>&1
+          test -z "$(git config --global --get http.proxy)"
+
+          # 证书未生成时: git on 完整模式应失败且 exit code = 1
+          if node index.js git on > /dev/null 2>&1; then
+            echo "FAIL: git on should exit 1 when CA cert is not generated"; exit 1
+          fi
+
+          # 不支持的 shell 应报错
+          if node index.js env on --shell fish > /dev/null 2>&1; then
+            echo "FAIL: unsupported shell should be rejected"; exit 1
+          fi
+
+          echo "CLI tests (stopped) passed"
+
+      # 启动冒烟 + 端到端 + 证书生成后的完整模式
+      - name: Startup smoke + end-to-end + full mode
+        run: |
+          set -e
+
+          node index.js > proxy.log 2>&1 &
+          PROXY_PID=$!
+
+          # 等待代理就绪(最多 30 秒,用真实代理请求探测)
+          READY=0
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -m 3 -x http://127.0.0.1:31180 http://example.com; then
+              READY=1; break
+            fi
+            sleep 1
+          done
+          if [ "$READY" != "1" ]; then
+            echo "FAIL: proxy did not become ready"; cat proxy.log; exit 1
+          fi
+          echo "proxy ready (PID: $PROXY_PID)"
+
+          # 端到端: 普通隧道代理(非拦截域名,无需证书)
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -x http://127.0.0.1:31180 http://example.com)
+          test "$CODE" = '200'
+          echo "e2e tunnel proxy: HTTP $CODE"
+
+          # 证书应已自动生成
+          test -f "$HOME/.dev-sidecar/dev-sidecar.ca.crt"
+          echo "CA cert generated"
+
+          # 证书生成后: git on 完整模式应成功, 且写入绝对路径
+          node index.js git on > /dev/null 2>&1
+          test "$(git config --global --get https.proxy)" = 'http://127.0.0.1:31181'
+          CERT_PATH=$(git config --global --get http.sslCAInfo)
+          case "$CERT_PATH" in
+            "~"*) echo "FAIL: sslCAInfo should be absolute path, got: $CERT_PATH"; exit 1;;
+          esac
+          test -f "$CERT_PATH"
+          node index.js git off > /dev/null 2>&1
+
+          # 证书生成后: npm on --mitm 应成功
+          node index.js npm on --mitm > /dev/null 2>&1
+          test "$(npm config get https-proxy)" = 'http://127.0.0.1:31181'
+          test -f "$(npm config get cafile)"
+          node index.js npm off > /dev/null 2>&1
+
+          kill $PROXY_PID 2>/dev/null || true
+          sleep 1
+          echo "startup + e2e + full mode passed"
+
+      # CA 私钥权限检查(仅类 Unix;Windows 无此权限模型)
+      - name: CA private key permission check
+        if: runner.os != 'Windows'
+        run: |
+          set -e
+          PERM=$(ls -l "$HOME/.dev-sidecar/dev-sidecar.ca.key.pem" | cut -c1-10)
+          if [ "$PERM" != "-rw-------" ]; then
+            echo "FAIL: CA key permission is $PERM, expected -rw-------"; exit 1
+          fi
+          echo "CA key permission ok: $PERM"
