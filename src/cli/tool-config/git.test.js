@@ -67,6 +67,13 @@ test('clean dryRun: 不执行 unset', async () => {
   assert.equal(run.calls.filter((c) => c.key.includes('--unset')).length, 0)
 })
 
+test('postVerify=false(元数据): unset 成功后不重读验证 — git 读取仅全局作用域', async () => {
+  const { adapter, run } = makeAdapter({ values: { 'http.proxy': OURS } })
+  await adapter.clean(ADDR)
+  // 3 个键的初始读取, 0 次验证重读(与 npm 合并源的作用域差异, 元数据驱动)
+  assert.equal(run.calls.filter((c) => c.key.includes('--get')).length, 3)
+})
+
 test('setProxy: 中途失败 → 已成功键并入快照段, 未尝试键不丢', async () => {
   const run = fakeRun([
     [/^git config --global http/, (_a, _b, key) => (key === 'https.proxy'
