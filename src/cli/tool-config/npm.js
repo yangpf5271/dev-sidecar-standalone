@@ -41,7 +41,6 @@ module.exports = (deps) => {
       const r = await deps.run('npm', ['config', 'delete', key], { shell: true })
       return r.ok ? { ok: true } : { ok: false, error: `npm config delete ${key} 失败: ${r.error || r.stderr}` }
     },
-    removeFailNote: (key, error) => `npm ${key} 删除失败: ${error}`,
     verifyFailNote: (key) => `npm ${key} 删除后仍生效（可能来自环境变量或项目级 .npmrc），请手工检查`,
   })
 

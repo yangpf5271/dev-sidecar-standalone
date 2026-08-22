@@ -22,16 +22,17 @@ test('parseDoc: 空内容 → data:null; 合法 JSON → data; 损坏 → 错误
   assert.ok(bad.error)
 })
 
-test('parseMirrors: 数组保留(滤非字符串), 缺失/非数组/空 → []', () => {
+test('parseMirrors: 数组原样保留(不滤项, 写回路径不改用户数组), 缺失/非数组 → []', () => {
   assert.deepEqual(pull.parseMirrors({ 'registry-mirrors': ['https://a.example', 'https://b.example'] }), ['https://a.example', 'https://b.example'])
-  assert.deepEqual(pull.parseMirrors({ 'registry-mirrors': [42, 'https://a.example'] }), ['https://a.example'])
+  assert.deepEqual(pull.parseMirrors({ 'registry-mirrors': [42, 'https://a.example'] }), [42, 'https://a.example'])
   assert.deepEqual(pull.parseMirrors({}), [])
   assert.deepEqual(pull.parseMirrors({ 'registry-mirrors': 'not-array' }), [])
   assert.deepEqual(pull.parseMirrors(null), [])
 })
 
-test('parseInsecureRegistries: 同 parseMirrors 语义', () => {
+test('parseInsecureRegistries: 滤非字符串(消费方 hostOf 需要字符串), 缺失 → []', () => {
   assert.deepEqual(pull.parseInsecureRegistries({ 'insecure-registries': ['127.0.0.1:5000'] }), ['127.0.0.1:5000'])
+  assert.deepEqual(pull.parseInsecureRegistries({ 'insecure-registries': [42] }), [])
   assert.deepEqual(pull.parseInsecureRegistries({}), [])
   assert.deepEqual(pull.parseInsecureRegistries(null), [])
 })

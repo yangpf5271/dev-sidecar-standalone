@@ -183,10 +183,7 @@ function readHostsPins () {
 // daemon.json 读取经拉取层知识模块(本机直读语境——拉取层命令仅 Linux/WSL 内运行)
 function readDaemonJson () {
   const r = pull.readLocal()
-  if (!r.ok) {
-    return { ok: false, error: `/etc/docker/daemon.json 已损坏(${r.error}),请人工修复后再试` }
-  }
-  const doc = pull.parseDoc(r.content)
+  const doc = r.ok ? pull.parseDoc(r.content) : { ok: false, error: r.error }
   if (!doc.ok) {
     return { ok: false, error: `/etc/docker/daemon.json 已损坏(${doc.error}),请人工修复后再试` }
   }
@@ -480,7 +477,7 @@ async function cmdMirrorRemove (args) {
     // off = 移除全部;无配置时不做无谓重启(避免打断运行中容器)
     const daemon = readDaemonJson()
     if (!daemon.ok) { console.error(`❌ ${daemon.error}`); process.exit(1) }
-    const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
+    const mirrors = pull.parseMirrors(daemon.data)
     if (mirrors.length === 0) {
       console.log('当前未配置任何镜像源,无需移除')
       return
@@ -500,7 +497,7 @@ async function removeOne (url) {
   const parsed = parseMirrorUrl(url)
   const daemon = readDaemonJson()
   if (!daemon.ok) { console.error(`❌ ${daemon.error}`); process.exit(1) }
-  const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
+  const mirrors = pull.parseMirrors(daemon.data)
   const next = mirrors.filter((u) => u !== parsed.url)
   if (next.length === 0) delete daemon.data['registry-mirrors']
   else daemon.data['registry-mirrors'] = next
@@ -528,7 +525,7 @@ async function cmdMirrorRefresh (args = []) {
   const cf = args.includes('--cf')
   const daemon = readDaemonJson()
   if (!daemon.ok) { console.error(`❌ ${daemon.error}`); process.exit(1) }
-  const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
+  const mirrors = pull.parseMirrors(daemon.data)
   if (mirrors.length === 0) {
     console.log('当前未配置任何镜像源(dss docker mirror add <url>)')
     return
@@ -578,8 +575,9 @@ async function cmdStatus () {
     console.log('  Windows 环境不支持拉取层命令(请在 WSL/Linux 运行)')
   } else {
     const daemon = readDaemonJson()
-    if (daemon.ok && Array.isArray(daemon.data['registry-mirrors']) && daemon.data['registry-mirrors'].length > 0) {
-      for (const url of daemon.data['registry-mirrors']) {
+    const mirrors = daemon.ok ? pull.parseMirrors(daemon.data) : []
+    if (mirrors.length > 0) {
+      for (const url of mirrors) {
         const parsed = parseMirrorUrl(url)
         const h = await healthCheck(parsed)
         console.log(`  ${h.ok ? '✅' : '❌'} ${url}${h.ok ? '' : ` (HTTP ${h.status || '无响应'})`}`)

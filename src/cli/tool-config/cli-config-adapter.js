@@ -15,14 +15,18 @@
 //   deps                      { run, homedir, snapshot } 工厂注入面
 //   readKey(key)              → 归一化值|null(未设置); 命令不可用时 throw
 //   read()                    → values 映射(含工具特有键, 如 npm 的 registry)
-//   writeKey(key, value)      → { ok, error? }
-//   removeKey(key)            → { ok, error? }(失败容忍判断在实现内, 如 git 退出码 5)
-//   removeFailNote(key, err)  clean 删除失败提示文案
+//   writeKey(key, value)      → { ok, error? }(error 自带命令上下文)
+//   removeKey(key)            → { ok, error? }(失败容忍判断在实现内, 如 git 退出码 5;
+//                              error 自带命令上下文, 直接作为 clean 的 note)
 //   verifyFailNote(key)       postVerify 仍生效提示文案(postVerify=true 时必需)
 const { classifyValues, isOurs, buildProxyCandidates, buildCertCandidates, normPathValue } = require('./shared')
 
 module.exports = function createCliConfigAdapter (meta) {
   const { deps } = meta
+  if (meta.postVerify && typeof meta.verifyFailNote !== 'function') {
+    // 构造期程序员错误, 直接抛出不走结果对象契约
+    throw new Error(`adapter ${meta.tool}: postVerify=true 需要 verifyFailNote`)
+  }
 
   async function read () {
     try {
@@ -106,7 +110,7 @@ module.exports = function createCliConfigAdapter (meta) {
           if (!dryRun) {
             const del = await meta.removeKey(key)
             if (!del.ok) {
-              notes.push(meta.removeFailNote(key, del.error))
+              notes.push(del.error)   // removeKey 的 error 自带命令上下文
               // 值仍在: 保留快照段供下次重试; removed 只收已验证不再生效的项
               sectionClean = false
               continue

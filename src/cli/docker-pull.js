@@ -23,16 +23,21 @@ function parseDoc (content) {
   }
 }
 
-/** registry-mirrors 解析: 缺失/非数组/空 → 空数组(非字符串项过滤) */
-function parseMirrors (data) {
-  const mirrors = data && data['registry-mirrors']
-  return Array.isArray(mirrors) ? mirrors.filter((v) => typeof v === 'string') : []
+/** 数组字段解析: 缺失/非数组 → 空数组; stringsOnly 时滤除非字符串项 */
+function parseStringArray (data, key, { stringsOnly = false } = {}) {
+  const list = data && data[key]
+  if (!Array.isArray(list)) return []
+  return stringsOnly ? list.filter((v) => typeof v === 'string') : list
 }
 
-/** insecure-registries 解析: 同 parseMirrors 语义 */
+/** registry-mirrors 解析: 缺失/非数组 → 空数组(原样保留, 不滤项——写回路径不改用户数组) */
+function parseMirrors (data) {
+  return parseStringArray(data, 'registry-mirrors')
+}
+
+/** insecure-registries 解析: 滤非字符串(消费方 hostOf 需要字符串, 防畸形配置崩溃) */
 function parseInsecureRegistries (data) {
-  const regs = data && data['insecure-registries']
-  return Array.isArray(regs) ? regs.filter((v) => typeof v === 'string') : []
+  return parseStringArray(data, 'insecure-registries', { stringsOnly: true })
 }
 
 // ---------------------------------------------------------------------------

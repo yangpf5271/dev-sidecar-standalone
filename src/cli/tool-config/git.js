@@ -40,7 +40,6 @@ module.exports = (deps) => {
       }
       return { ok: true }
     },
-    removeFailNote: (key, error) => `git config --unset ${key} 失败: ${error}`,
   })
 
   return {
