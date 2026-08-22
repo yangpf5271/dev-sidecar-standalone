@@ -40,18 +40,44 @@ const api = {
     registerProcessListener()
   },
   async close () {
+    const list = servers
+    servers = []
+    if (!list || list.length === 0) {
+      log.info('server is null, no need to close.')
+      return
+    }
     return new Promise((resolve) => {
-      if (servers && servers.length > 0) {
-        for (const server of servers) {
-          server.close(() => {
+      // 优雅关闭：立即停止接受新连接并关闭空闲连接。
+      // 活跃的 CONNECT 隧道会无限期挂住 close 回调，内部宽限后强制关闭全部连接，
+      // 保证 close 在有限时间内完成（不依赖外部超时强杀）。
+      for (const server of list) {
+        if (typeof server.closeIdleConnections === 'function') {
+          server.closeIdleConnections()
+        }
+      }
+      const forceTimer = setTimeout(() => {
+        for (const server of list) {
+          if (typeof server.closeAllConnections === 'function') {
+            server.closeAllConnections()
+          }
+        }
+      }, 1500)
+      // 兜底：即使 close 回调异常未触发也不永久挂起
+      const safetyTimer = setTimeout(() => {
+        clearTimeout(forceTimer)
+        resolve()
+      }, 5000)
+      let remaining = list.length
+      for (const server of list) {
+        server.close(() => {
+          remaining--
+          if (remaining <= 0) {
+            clearTimeout(forceTimer)
+            clearTimeout(safetyTimer)
             log.info('代理服务关闭成功')
             resolve()
-          })
-        }
-        servers = []
-      } else {
-        log.info('server is null, no need to close.')
-        resolve()
+          }
+        })
       }
     })
   },

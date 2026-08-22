@@ -82,6 +82,20 @@ sudo update-ca-trust
 
 ## 使用方式
 
+### 进程管理（推荐）
+
+```bash
+dss start              # 后台启动（守护进程）
+dss stop               # 停止，并自动恢复 npm/git 中指向本代理的配置
+dss restart            # 重启（保留配置，不断加速状态）
+dss log [-f] [-n 200]  # 查看守护进程日志（-f 持续跟随）
+dss status             # 运行状态 / 端口 / PID / 证书状态
+```
+
+`dss stop` / `dss restore` 采用**智能恢复**：只清理 dss 设置的、且仍指向本代理地址的配置项，用户自己的其他代理配置（公司代理等）绝对不受影响。代理崩溃/被强杀后的配置残留，用 `dss restore` 一键扫尾；`dss status` 检测到残留会主动提示。
+
+> 说明：直接运行 `dss`（无参数）为前台模式，Ctrl+C 停止。`dss -d` 等价于 `dss start`。
+
 ### 浏览器
 
 设置 HTTP 代理为 `127.0.0.1:31180`（HTTP 代理端口），安装 CA 证书到系统信任列表后，浏览器会自动通过 HTTPS MITM 端口 `31181` 进行拦截加速。

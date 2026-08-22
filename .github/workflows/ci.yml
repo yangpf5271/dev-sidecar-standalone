@@ -144,3 +144,58 @@ jobs:
             echo "FAIL: CA key permission is $PERM, expected -rw-------"; exit 1
           fi
           echo "CA key permission ok: $PERM"
+
+      # 守护进程管理 + 智能恢复测试
+      # 关键不变量: 预埋的第三方代理值绝不能被误删
+      - name: Daemon start/stop + smart restore
+        run: |
+          set -e
+
+          # 预埋第三方代理值(占 dss 不覆盖的键: npm cafile / git https.proxy)
+          npm config set cafile /tmp/corp-ca.crt
+          git config --global https.proxy http://corp-proxy.example:8080
+
+          # 守护启动: PID 文件应出现
+          node index.js start | grep "Daemon PID"
+          for i in $(seq 1 30); do
+            [ -f "$HOME/.dev-sidecar/dev-sidecar.pid" ] && break
+            sleep 1
+          done
+          test -f "$HOME/.dev-sidecar/dev-sidecar.pid"
+          DAEMON_PID=$(cat "$HOME/.dev-sidecar/dev-sidecar.pid")
+          echo "daemon started, pid: $DAEMON_PID"
+
+          # dss 写入配置(简单模式: npm 设 proxy/https-proxy, git 设 http.proxy)
+          node index.js npm on > /dev/null 2>&1
+          node index.js git on --simple > /dev/null 2>&1
+          test "$(npm config get proxy)" = 'http://127.0.0.1:31180'
+
+          # stop: 进程终止 + 自己的配置恢复 + 第三方值原样
+          node index.js stop | grep -E "已停止|已恢复"
+          for i in $(seq 1 15); do
+            kill -0 "$DAEMON_PID" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$DAEMON_PID" 2>/dev/null; then
+            echo "FAIL: daemon still alive after stop"; exit 1
+          fi
+          test ! -f "$HOME/.dev-sidecar/dev-sidecar.pid"
+          test "$(npm config get proxy)" = 'null'
+          test "$(npm config get https-proxy)" = 'null'
+          test -z "$(git config --global --get http.proxy)"
+          # 第三方值不受影响
+          test "$(npm config get cafile)" = '/tmp/corp-ca.crt'
+          test "$(git config --global --get https.proxy)" = 'http://corp-proxy.example:8080'
+
+          # 日志文件应有内容
+          test -s "$HOME/.dev-sidecar/logs/dev-sidecar.log"
+
+          # restore 幂等
+          node index.js restore > /dev/null 2>&1
+          node index.js restore > /dev/null 2>&1
+
+          # 清理第三方测试值
+          npm config delete cafile
+          git config --global --unset https.proxy
+
+          echo "daemon start/stop + smart restore passed"

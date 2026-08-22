@@ -1,5 +1,5 @@
 // dss npm on|off — 配置/取消 npm 代理
-const { resolveProxyAddress, resolveCertPaths, runCommand, probePort } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, runCommand, probePort, updateSnapshot, clearSnapshotSection } = require('./utils')
 
 async function run (args) {
   const action = args[0]
@@ -57,6 +57,9 @@ async function enable (args) {
   console.log('')
   console.log(useMitm ? 'npm 已配置为 MITM 加速模式（需已安装 CA 证书）' : 'npm 已配置为简单代理模式（HTTP 隧道，无需证书）')
   console.log('取消配置: dss npm off')
+
+  // 记录本次写入的实际值，供 dss stop / dss restore 智能恢复
+  updateSnapshot('npm', Object.fromEntries(tasks))
 }
 
 async function disable () {
@@ -68,6 +71,7 @@ async function disable () {
       process.exit(1)
     }
   }
+  clearSnapshotSection('npm')
   console.log('✅ npm 代理配置已清除 (proxy / https-proxy / cafile)')
 }
 

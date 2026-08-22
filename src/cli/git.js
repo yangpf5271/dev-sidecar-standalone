@@ -1,5 +1,5 @@
 // dss git on|off — 配置/取消 git 代理（全局配置）
-const { resolveProxyAddress, resolveCertPaths, runCommand, probePort } = require('./utils')
+const { resolveProxyAddress, resolveCertPaths, runCommand, probePort, updateSnapshot, clearSnapshotSection } = require('./utils')
 
 async function run (args) {
   const action = args[0]
@@ -66,6 +66,9 @@ async function enable (args) {
   console.log('')
   console.log(simple ? 'git 已配置为简单代理模式（仅 HTTP 隧道，无需证书）' : 'git 已配置为完整加速模式（HTTPS MITM + CA 证书）')
   console.log('取消配置: dss git off')
+
+  // 记录本次写入的实际值，供 dss stop / dss restore 智能恢复
+  updateSnapshot('git', Object.fromEntries(tasks))
 }
 
 async function disable () {
@@ -78,6 +81,7 @@ async function disable () {
       process.exit(1)
     }
   }
+  clearSnapshotSection('git')
   console.log('✅ git 代理配置已清除 (http.proxy / https.proxy / http.sslCAInfo)')
 }
 

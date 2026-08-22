@@ -22,19 +22,17 @@ function startupEntryPoint (cli) {
 const DAEMON = process.argv.includes('--daemon') || process.argv.includes('-d')
 const VERSION = require('./package.json').version
 
-// 守护进程模式：fork 后台子进程，父进程退出
+// 守护进程模式：委派给 dss start 的实现（PID 文件 + 日志文件 + 启动校验）
 if (DAEMON) {
-  const { spawn } = require('node:child_process')
-  // 去掉 -d / --daemon 参数，避免子进程再次 fork
+  const startDaemon = require('./src/cli/start').startDaemon
   const childArgs = process.argv.slice(2).filter(a => a !== '-d' && a !== '--daemon')
-  const child = spawn(process.execPath, [__filename, ...childArgs], {
-    cwd: process.cwd(),
-    stdio: 'ignore',
-    detached: true,
-  })
-  child.unref()
-  console.log(`✅ Daemon PID: ${child.pid}`)
-  process.exit(0)
+  startDaemon(childArgs)
+    .then(() => process.exit(0))
+    .catch((e) => {
+      console.error('❌ 后台启动失败:', e.message)
+      process.exit(1)
+    })
+  return
 }
 
 // 快速参数检查：-h/-V 在 require 模块之前退出，避免副作用日志
@@ -59,7 +57,8 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log('示例:')
   console.log('  dss                               默认启动 (127.0.0.1:31181)')
   console.log('  dss -c ./config.json              使用自定义配置')
-  console.log('  dss -d                            后台守护进程')
+  console.log('  dss start / dss -d                后台守护进程')
+  console.log('  dss stop                          停止并恢复代理配置')
   console.log('  dss npm on                        一键配置 npm 走代理')
   console.log('  dss status                        查看代理运行状态')
   console.log('  PORT=8080 dss                     自定义端口 8080')
@@ -202,6 +201,19 @@ async function main () {
     log.info(`   HTTP 代理: ${host}:${port - 1}`)
     log.info(`   HTTPS 代理: ${host}:${port}`)
     log.info(`  按 Ctrl+C 停止服务`)
+
+    // 守护进程模式（dss start / dss -d fork 出来的子进程）：
+    // listen 成功后自己写 PID 文件（父进程不盲写，避免早退竞态）
+    if (process.env.DSS_DAEMON === '1') {
+      const { writePidFile, readPidFile, removePidFile } = require('./src/cli/utils')
+      writePidFile(process.pid)
+      process.on('exit', () => {
+        // 仅当 PID 文件仍指向自己时清理（强杀场景由 start/stop 的残留清理兜底）
+        if (readPidFile() === process.pid) {
+          removePidFile()
+        }
+      })
+    }
   } catch (e) {
     log.error('❌ 启动失败:', e)
     process.exit(1)
