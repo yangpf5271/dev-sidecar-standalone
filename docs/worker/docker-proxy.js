@@ -133,7 +133,11 @@ async function getUpstreamToken (env, scope) {
   }
 
   const r = await fetch(authUrl.toString(), { headers })
-  if (!r.ok) throw new Error(`auth.docker.io ${r.status}`)
+  if (!r.ok) {
+    // 带出上游错误详情(如 DOCKERHUB_AUTH 格式错误导致 400),避免黑盒排查
+    const detail = (await r.text().catch(() => '')).slice(0, 120)
+    throw new Error(`auth.docker.io ${r.status}${detail ? `: ${detail}` : ''}`)
+  }
   const data = await r.json()
   if (tokenCache.size > 64) tokenCache.clear() // 粗暴上限, 防 isolate 长期膨胀
   tokenCache.set(scope, { token: data.token, expire: now + (data.expires_in || 300) })
