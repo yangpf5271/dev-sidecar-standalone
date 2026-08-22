@@ -14,9 +14,10 @@ const dns = require('node:dns').promises
 const { spawn } = require('node:child_process')
 const { IS_WIN, resolveProxyAddress, runCommand, probePort } = require('./utils')
 const { adapters } = require('./tool-config')
+const pull = require('./docker-pull')
 
 const HOSTS_FILE = '/etc/hosts'
-const DAEMON_JSON = '/etc/docker/daemon.json'
+const DAEMON_JSON = pull.DAEMON_JSON
 const HOSTS_MARKER = 'dss-mirror' // 行格式: <ip> <domain> # dss-mirror
 
 // Cloudflare 官方 IPv4 段(用于判定镜像域名是否走 CF,命中才做优选钉定)
@@ -61,21 +62,6 @@ function isCloudflareIP (ip) {
 }
 
 // config.json 的读写独家归属 tool-config docker adapter(auths 值级保留、格式统一);
-// readJsonFile/writeJson 仍服务 daemon.json 等其他文件
-function readJsonFile (file) {
-  try {
-    return { ok: true, data: JSON.parse(fs.readFileSync(file, 'utf8')) }
-  } catch (e) {
-    if (e.code === 'ENOENT') return { ok: true, data: null }
-    return { ok: false, error: e.message }
-  }
-}
-
-function writeJson (file, data) {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n', 'utf8')
-}
-
 /** sudo 复制(sudo 密码交互走终端 stdio inherit;不能用 tee 管道,密码需要 tty) */
 function sudoCopy (src, dst) {
   return new Promise((resolve) => {
@@ -194,12 +180,17 @@ function readHostsPins () {
 // daemon.json 管理
 // ---------------------------------------------------------------------------
 
+// daemon.json 读取经拉取层知识模块(本机直读语境——拉取层命令仅 Linux/WSL 内运行)
 function readDaemonJson () {
-  const r = readJsonFile(DAEMON_JSON)
+  const r = pull.readLocal()
   if (!r.ok) {
     return { ok: false, error: `/etc/docker/daemon.json 已损坏(${r.error}),请人工修复后再试` }
   }
-  return { ok: true, data: r.data || {} }
+  const doc = pull.parseDoc(r.content)
+  if (!doc.ok) {
+    return { ok: false, error: `/etc/docker/daemon.json 已损坏(${doc.error}),请人工修复后再试` }
+  }
+  return { ok: true, data: doc.data || {} }
 }
 
 async function writeDaemonJson (data) {
@@ -245,8 +236,8 @@ async function collectNoProxy (extra = []) {
     for (const key of Object.keys(cfg.data.auths)) list.push(hostOf(key))
   }
   const daemon = readDaemonJson()
-  if (daemon.ok && daemon.data && Array.isArray(daemon.data['insecure-registries'])) {
-    for (const reg of daemon.data['insecure-registries']) list.push(hostOf(reg))
+  if (daemon.ok) {
+    for (const reg of pull.parseInsecureRegistries(daemon.data)) list.push(hostOf(reg))
   }
   for (const e of extra) {
     for (const item of String(e).split(',')) {
@@ -439,7 +430,7 @@ async function cmdMirrorAdd (args) {
     console.error(`❌ ${daemon.error}`)
     process.exit(1)
   }
-  const mirrors = Array.isArray(daemon.data['registry-mirrors']) ? daemon.data['registry-mirrors'] : []
+  const mirrors = pull.parseMirrors(daemon.data)
   const already = mirrors.includes(parsed.url)
   if (!already) mirrors.push(parsed.url)
   daemon.data['registry-mirrors'] = mirrors
