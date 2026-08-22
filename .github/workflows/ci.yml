@@ -224,10 +224,10 @@ jobs:
           # 清理
           npm config delete registry
 
-          # pip(runner 无 pip 时跳过)
+          # pip(runner 无 pip 时跳过; runner pip 原本无源, off 走"清除"分支)
           if command -v pip3 >/dev/null 2>&1 || command -v pip >/dev/null 2>&1; then
             node index.js pip mirror aliyun | grep "已切换"
-            node index.js pip mirror off | grep "已恢复"
+            node index.js pip mirror off | grep -E "已恢复|已清除"
           else
             echo "pip not available on this runner, skipped"
           fi
