@@ -79,6 +79,7 @@ docker pull mirror.你的域名.com/library/nginx   # 直接引用本域名拉�
 
 已知限制：
 
+- 控制台提示「超过 300MB 的文件只能用 S3 API 或 Workers 上载」**不影响本方案**——Worker 写 R2 走的就是 Workers 绑定 API（上限约 5GB），且代码仅缓存 ≤512MB 的 layer
 - 超过 **512MB** 的 layer 不缓存（防止免费额度被单层吃光）
 - 客户端中途断连时，缓存写入最多延续 ~30 秒，超大层可能缓存失败（下次自然重试）
 - 桶不会自动清理——建议给 bucket 配置 Lifecycle 规则（如 30 天后删除）控制容量
