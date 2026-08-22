@@ -48,4 +48,5 @@
 ## 8. 收尾
 
 - [x] 8.1 全量回归：本地 33 项单测 + status/restore/npm/git/docker/mirror 全链路冒烟（含真实 config.json 的 on→off 循环）+ CI unit job 与 3×3 矩阵全绿
-- [ ] 8.2 版本 bump 1.6.0（在 v1.5.0 已发布之后），提交推送双远端，发布交接（npm publish 由用户执行，tag/Release 随后）
+
+（发布动作按约定在 OpenSpec 之外跟踪：v1.5.0 / v1.6.0 由用户择时 `npm publish`，版本 bump、tag/Release 随发布进行——见 design.md D14 与本地 spec 的 Out of Scope）
