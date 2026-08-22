@@ -77,7 +77,7 @@ function printHelp () {
   console.log('  dss start / dss -d                后台守护进程')
   console.log('  dss stop                          停止并恢复代理配置')
   console.log('  dss npm on                        一键配置 npm 走代理')
-  console.log('  dss status                        查看运行状态')
+  console.log('  dss status                        查看代理运行状态')
   console.log('  PORT=8080 dss                     自定义端口 8080')
   console.log('  HOST=0.0.0.0 PORT=8080 dss        监听所有网卡')
 }
@@ -210,6 +210,7 @@ async function startup (configPath) {
     log().info(`✅ Dev-Sidecar 纯服务器版启动成功！`)
     log().info(`   HTTP 代理: ${host}:${port - 1}`)
     log().info(`   HTTPS 代理: ${host}:${port}`)
+    log().info(`  按 Ctrl+C 停止服务`)
 
     // 守护进程模式（dss start / dss -d fork 出来的子进程）：
     // listen 成功后自己写 PID 文件（父进程不盲写，避免早退竞态）

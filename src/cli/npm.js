@@ -140,7 +140,7 @@ async function mirror (args) {
     process.exit(1)
   }
   if (!r.changed) {
-    console.log(`npm 源已经是 ${NPM_MIRRORS[action].name} (${NPM_MIRRORS[action].url})`)
+    console.log(`npm 源已经是 ${r.entryName} (${r.to})`)
     return
   }
   console.log(`✅ npm 源已切换: ${r.entryName}`)

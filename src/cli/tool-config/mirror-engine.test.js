@@ -96,10 +96,17 @@ test('status: 当前值/快照/表内识别', async () => {
   assert.equal(r.known, '阿里云')
 })
 
-test('兼容历史快照键(registry/indexUrl)可被 off 读取恢复', async () => {
+test('兼容历史快照键(registry/indexUrl)可被 off 读取恢复且段被清理', async () => {
   const LEGACY = 'https://legacy.example/x'
   const { engine, snapshotState } = makeEngine({ current: MIRRORS.tuna.url })
   snapshotState.mirror = { test: { registry: LEGACY } }   // npm 时代键名
   const r = await engine.off()
   assert.equal(r.target, LEGACY)
+  assert.equal(snapshotState.mirror, undefined)           // 段清理(含 legacy 键)
+
+  // pip 时代键名同构
+  snapshotState.mirror = { test: { indexUrl: LEGACY } }
+  const r2 = await engine.off()
+  assert.equal(r2.target, LEGACY)
+  assert.equal(snapshotState.mirror, undefined)
 })

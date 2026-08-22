@@ -67,7 +67,7 @@ async function mirror (args) {
     process.exit(1)
   }
   if (!r.changed) {
-    console.log(`pip 源已经是 ${PIP_MIRRORS[action].name} (${PIP_MIRRORS[action].url})`)
+    console.log(`pip 源已经是 ${r.entryName} (${r.to})`)
     return
   }
   console.log(`✅ pip 源已切换: ${r.entryName}`)

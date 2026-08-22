@@ -6,7 +6,7 @@
 //  ③ -d/--daemon → daemon（剥离旗标，其余参数转交子进程）
 //  ④ -c/--config <v> | --config=<v>（文法统一）| 未知选项 | 位置参数 → error
 //  ⑤ 其余 → run
-const { isSubcommand, USAGE } = require('./index')
+const { isSubcommand, USAGE, subcommandNames } = require('./index')
 
 const HELP_FLAGS = ['-h', '--help']
 const VERSION_FLAGS = ['-v', '-V', '--version']
@@ -78,10 +78,6 @@ function suggestSubcommand (input) {
     }
   }
   return best
-}
-
-function subcommandNames () {
-  return require('./index').subcommandNames()
 }
 
 function editDistance (a, b) {

@@ -16,7 +16,8 @@ function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
   // 兼容历史快照键(npm 曾用 registry / pip 曾用 indexUrl)，统一写 original;
   // 'null'/空串按未设置处理(旧 pip 的防护语义)
   const readSaved = () => {
-    const section = snap.read().mirror && snap.read().mirror[name]
+    const mirrorSection = snap.read().mirror
+    const section = mirrorSection && mirrorSection[name]
     if (!section) return null
     const v = section.original || section.registry || section.indexUrl || null
     return (v && v !== 'null') ? v : null
@@ -52,7 +53,7 @@ function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
       }
       const current = await readCurrent()
       if (current === entry.url) {
-        return { ok: true, changed: false, current }
+        return { ok: true, changed: false, current, entryName: entry.name, to: entry.url }
       }
       saveOriginalIfAbsent(current)
       const r = await adapter.setMirror(entry.url)
