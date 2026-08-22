@@ -39,7 +39,6 @@ module.exports = (deps) => {
     const def = doc.data && doc.data.proxies && doc.data.proxies.default
     return {
       ok: true,
-      def: def || null,
       values: {
         http: (def && def.httpProxy) || null,
         https: (def && def.httpsProxy) || null,

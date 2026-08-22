@@ -8,13 +8,14 @@ const OURS = 'http://127.0.0.1:31180'
 const FOREIGN = 'http://corp-proxy.example:8080'
 
 function makeAdapter ({ values = {}, snapshot = {} } = {}) {
+  const state = { ...values }
   const get = (k) => {
-    if (!(k in values)) return { ok: true, stdout: 'null' }
-    return { ok: true, stdout: values[k] }
+    if (!(k in state)) return { ok: true, stdout: 'null' }
+    return { ok: true, stdout: state[k] }
   }
   const run = fakeRun([
-    [/^npm config get/, (_sub, _get, key) => get(key)],
-    [/^npm config delete/, { ok: true, stdout: '' }],
+    [/^npm config get/, (_s, _g, key) => get(key)],
+    [/^npm config delete/, (_s, _g, key) => { delete state[key]; return { ok: true, stdout: '' } }],
   ])
   const snap = fakeSnapshot(snapshot)
   const adapter = createNpm({ run, homedir: () => '/tmp/fake-home', snapshot: snap })
@@ -83,6 +84,20 @@ test('clean dryRun: 只探测不写', async () => {
   const r = await adapter.clean(ADDR, { dryRun: true })
   assert.deepEqual(r.removed, ['npm proxy'])
   assert.equal(run.calls.filter((c) => c.key.startsWith('npm config delete')).length, 0)
+})
+
+test('clean: 删除后仍生效(env/.npmrc 覆盖) → note + 快照段保留', async () => {
+  // delete 成功但 get 仍返回值(环境变量或项目级 .npmrc 覆盖场景)
+  const run = fakeRun([
+    [/^npm config get/, (_s, _g, key) => (key === 'proxy' ? { ok: true, stdout: OURS } : { ok: true, stdout: 'null' })],
+    [/^npm config delete/, { ok: true, stdout: '' }],
+  ])
+  const snap = fakeSnapshot({ npm: { proxy: OURS } })
+  const adapter = createNpm({ run, homedir: () => '/tmp/x', snapshot: snap })
+  const r = await adapter.clean(ADDR)
+  assert.deepEqual(r.removed, ['npm proxy'])
+  assert.match(r.notes[0], /仍生效/)
+  assert.deepEqual(snap.cleared, [])   // 值仍在, 不清段
 })
 
 test('clean: npm 命令不可用 → 结果对象报错, 不 throw', async () => {

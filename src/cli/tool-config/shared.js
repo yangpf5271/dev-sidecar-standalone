@@ -54,7 +54,17 @@ function buildProxyCandidates (addr, snapshot) {
   return set
 }
 
-/** 证书路径候选集: 当前证书路径 + 快照记录的证书键值 */
+/**
+ * isOurs 严格语义判定(供清理): 值必须精确命中候选集。
+ * 与 classify(宽松)的分叉是设计行为, 由单测锁定 — 见 spec: tool-config-store
+ */
+function isOurs (candidates, value) {
+  return candidates.has(value)
+}
+
+/** 证书路径候选集: 当前证书路径 + 快照记录的证书键值。
+ * DEV_SIDECAR_HOME 是全项目约定(与 utils.resolveCertPaths 一致)的数据目录重定向,
+ * 属共享环境约定而非 tool-config 的注入项 */
 function buildCertCandidates (homedir, snapshot) {
   const base = path.resolve(process.env.DEV_SIDECAR_HOME || homedir(), '.dev-sidecar')
   const set = new Set([path.join(base, 'dev-sidecar.ca.crt')])
@@ -78,6 +88,7 @@ function normPathValue (v) {
 module.exports = {
   normalizeProxyUrlValue,
   classifyValues,
+  isOurs,
   buildProxyCandidates,
   buildCertCandidates,
   normPathValue,

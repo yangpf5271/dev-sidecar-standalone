@@ -39,7 +39,7 @@ test('clean: 本代理键清理 + 快照段收敛, 第三方键保留', async ()
   assert.deepEqual(snap.cleared, ['git'])
 })
 
-test('clean: unset 退出码 5(键不存在)被容忍, 其他失败记入 notes', async () => {
+test('clean: unset 退出码 5(键不存在)被容忍; 其他失败保留快照段供重试', async () => {
   const { adapter } = makeAdapter({
     values: { 'http.proxy': OURS },
     unsetResult: { ok: false, code: 5, stdout: '', stderr: '' },  // 键不存在, 正常
@@ -48,13 +48,16 @@ test('clean: unset 退出码 5(键不存在)被容忍, 其他失败记入 notes'
   assert.deepEqual(r.removed, ['git http.proxy'])
   assert.deepEqual(r.notes, [])
 
-  const { adapter: a2 } = makeAdapter({
+  // unset 真失败: 值仍在 → 快照段必须保留(端口漂移候选集供下次重试)
+  const { adapter: a2, snap } = makeAdapter({
     values: { 'http.proxy': OURS },
     unsetResult: { ok: false, code: 128, stdout: '', stderr: 'fatal: bad config' },
+    snapshot: { git: { 'http.proxy': OURS } },
   })
   const r2 = await a2.clean(ADDR)
   assert.deepEqual(r2.removed, [])
   assert.match(r2.notes[0], /失败/)
+  assert.deepEqual(snap.cleared, [])   // 不清段
 })
 
 test('clean dryRun: 不执行 unset', async () => {

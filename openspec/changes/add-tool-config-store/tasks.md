@@ -31,7 +31,7 @@
 ## 5. 切片五：status 切换到 tool-config（第①步完成，分叉消除）
 
 - [x] 5.1 status 的 collectTools 改用 adapters.classify（结构化 mode → 命令层中文文案），镜像标签逻辑暂留原地
-- [x] 5.2 切换前后 status 输出逐行对照一致（同机同状态下 diff 为空或仅有预期的边界值差异：docker build 徽标从"已注入"统一为 classify 词汇，语义更准）
+- [x] 5.2 切换前后 status 输出对照：空闲态与 on 态逐行一致；边界值展示按设计统一（docker build 从"已注入"改为 classify 词汇、第三方 pip 代理从"隧道"改为 ⚠️ 原值、MITM 缺 CA 提示恢复显示——均属"展示更准确"的预期差异）
 - [x] 5.3 CONTEXT.md 随本切片入库，README/USAGE 无需变化（外部行为不变）
 
 ## 6. 切片六：npm/git 命令改薄（第②步）
@@ -47,5 +47,5 @@
 
 ## 8. 收尾
 
-- [ ] 8.1 全量回归：本地 dss status/stop/restore/npm/git/docker 冒烟 + CI 3×3 矩阵与 unit job 全绿
+- [x] 8.1 全量回归：本地 33 项单测 + status/restore/npm/git/docker/mirror 全链路冒烟（含真实 config.json 的 on→off 循环）+ CI unit job 与 3×3 矩阵全绿
 - [ ] 8.2 版本 bump 1.6.0（在 v1.5.0 已发布之后），提交推送双远端，发布交接（npm publish 由用户执行，tag/Release 随后）
