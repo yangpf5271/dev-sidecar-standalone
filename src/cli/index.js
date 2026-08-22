@@ -8,6 +8,7 @@ const SUBCOMMANDS = {
   log: () => require('./log'),
   npm: () => require('./npm'),
   git: () => require('./git'),
+  pip: () => require('./pip'),
   env: () => require('./env'),
   cert: () => require('./cert'),
   status: () => require('./status'),
@@ -28,7 +29,13 @@ const USAGE = `进程管理:
   dss git off           取消 git 代理配置
   dss env on|off        输出 shell 代理环境变量（配合 eval 使用）
   dss restore           恢复 npm/git 中指向本代理的配置（不动进程）
-  dss cert              显示 CA 证书路径和安装方法`
+  dss cert              显示 CA 证书路径和安装方法
+
+镜像源切换（与代理正交，无需代理运行）:
+  dss npm mirror <name> 切换 npm 镜像（npmmirror / ustc）
+  dss npm mirror off    恢复切换前的源（快照保护企业源）
+  dss pip mirror <name> 切换 pip 镜像（tsinghua / aliyun / ustc / nju）
+  dss pip mirror off    恢复切换前的源`
 
 /** 判断 argv[2] 是否为已知子命令 */
 function isSubcommand (arg) {

@@ -372,9 +372,10 @@ module.exports = {
   verifyProcessIdentity,
   findPidsByPort,
   terminateProcess,
-  // 配置快照
+  // 配置快照（npm/git 代理段 + mirror 镜像段共用同一文件）
   readSnapshot,
   updateSnapshot,
   clearSnapshotSection,
+  writeSnapshot: writeSnapshotFile,
   snapshotFilePath: snapshotFilePathForCheck,
 }

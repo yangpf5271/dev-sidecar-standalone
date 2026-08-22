@@ -168,6 +168,28 @@ dss status
 dss cert
 ```
 
+### 镜像源切换（npm / pip）
+
+与代理模式正交——镜像源国内直连可达，无需代理运行：
+
+```bash
+# npm：切换到 npmmirror（淘宝）/ 中科大镜像
+dss npm mirror npmmirror
+dss npm mirror status      # 查看当前源
+dss npm mirror off         # 恢复切换前的源
+
+# pip：切换到清华 / 阿里 / 中科大 / 南大镜像（均为 https）
+dss pip mirror tsinghua
+dss pip mirror off
+```
+
+设计说明：
+
+- **快照保护**：首次切换前自动记录当前源，`off` 恢复快照而非硬编码官方源——企业内网源不会被覆盖丢失
+- **只提供 https 镜像**，不使用 `trusted-host`（避免跳过证书校验的安全降级）
+- **与代理互斥提示**：镜像无需配合代理（双重跳转反而慢），同时开启会提示
+- 已知特性：npm 镜像只读，`npm publish` 需临时指定官方源（`npm publish --registry https://registry.npmjs.org`）；新发布的包同步到镜像约有 10 分钟延迟；项目场景注意 `package-lock.json` 的 `resolved` 字段会随源变化
+
 > 子命令会自动探测代理是否在运行、证书是否已生成，并给出提示。
 > 使用了自定义 `PORT` 或 `-c` 配置文件的场景，子命令同样支持 `-c` 参数和环境变量。
 >

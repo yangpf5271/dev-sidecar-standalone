@@ -202,3 +202,34 @@ jobs:
           git config --global --unset https.proxy
 
           echo "daemon start/stop + smart restore passed"
+
+      # 镜像源切换测试: 核心不变量是企业源快照保护
+      - name: Mirror switch tests (npm + pip)
+        run: |
+          set -e
+
+          # 预埋企业源(off 后必须恢复到它,而不是官方源)
+          npm config set registry https://registry.corp.example/
+          node index.js npm mirror npmmirror | grep "已切换"
+          test "$(npm config get registry)" = 'https://registry.npmmirror.com'
+
+          # 重复切换不同镜像,快照不应被覆盖
+          node index.js npm mirror ustc > /dev/null
+          test "$(npm config get registry)" = 'https://npmreg.proxy.ustclug.org'
+
+          # off 恢复企业源(快照保护断言)
+          node index.js npm mirror off | grep "已恢复"
+          test "$(npm config get registry)" = 'https://registry.corp.example/'
+
+          # 清理
+          npm config delete registry
+
+          # pip(runner 无 pip 时跳过)
+          if command -v pip3 >/dev/null 2>&1 || command -v pip >/dev/null 2>&1; then
+            node index.js pip mirror aliyun | grep "已切换"
+            node index.js pip mirror off | grep "已恢复"
+          else
+            echo "pip not available on this runner, skipped"
+          fi
+
+          echo "mirror switch tests passed"
