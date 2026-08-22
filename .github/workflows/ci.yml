@@ -233,3 +233,34 @@ jobs:
           fi
 
           echo "mirror switch tests passed"
+
+      # Docker 构建层: proxies 注入 + auths 保护 + noProxy 聚合
+      - name: Docker build-layer proxy tests
+        run: |
+          set -e
+
+          # 预埋含内网 registry auths 的 config.json(必须逐字保留)
+          mkdir -p "$HOME/.docker"
+          printf '{"auths":{"corp-registry.example:5000":{"auth":"dGVzdA=="}}}' > "$HOME/.docker/config.json"
+
+          node index.js docker on | grep "✅"
+          node -e "
+            const c = require(process.env.HOME + '/.docker/config.json')
+            const p = c.proxies && c.proxies.default
+            const ok = p && p.httpProxy.startsWith('http://') &&
+              Object.keys(c.auths).length === 1 &&
+              p.noProxy.includes('corp-registry.example') &&
+              p.noProxy.includes('127.0.0.1')
+            if (!ok) { console.error('FAIL: proxies/auths/noProxy assertion'); process.exit(1) }
+            console.log('proxies + auths + noProxy ok')
+          "
+
+          node index.js docker off | grep "✅"
+          node -e "
+            const c = require(process.env.HOME + '/.docker/config.json')
+            if (c.proxies) { console.error('FAIL: proxies should be removed'); process.exit(1) }
+            if (Object.keys(c.auths).length !== 1) { console.error('FAIL: auths lost'); process.exit(1) }
+            console.log('off: proxies removed, auths preserved')
+          "
+
+          echo "docker build-layer tests passed"

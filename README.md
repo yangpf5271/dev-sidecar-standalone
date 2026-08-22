@@ -190,6 +190,58 @@ dss pip mirror off
 - **与代理互斥提示**：镜像无需配合代理（双重跳转反而慢），同时开启会提示
 - 已知特性：npm 镜像只读，`npm publish` 需临时指定官方源（`npm publish --registry https://registry.npmjs.org`）；新发布的包同步到镜像约有 10 分钟延迟；项目场景注意 `package-lock.json` 的 `resolved` 字段会随源变化
 
+### Docker 加速
+
+Docker 场景分两层，分别解决「拉不动基础镜像」和「构建时依赖装不上」：
+
+**拉取层（docker pull / FROM，需 Linux/WSL + sudo）**
+
+```bash
+# 接入自建镜像源（推荐，谁使用谁部署，见下方「自建镜像站」）
+dss docker mirror add https://mirror.你的域名.com/<token>
+
+# 变慢时重测优选 IP（CF 边缘 IP 质量会漂移，这是自建站变慢的主因）
+dss docker mirror refresh
+
+# 移除
+dss docker mirror remove https://mirror.你的域名.com/<token>
+
+# 状态总览
+dss docker status
+```
+
+`mirror add` 一条命令完成：健康检查（`/v2/` 硬阻断，`--force` 跳过）→ Cloudflare 边缘 IP 测速优选 → `/etc/hosts` 钉定 → `daemon.json` 合并写入（**保留现有全部配置**）→ 重启 docker → `docker info` 验证。配置后 `docker pull` 无感知直拉。
+
+**自建镜像站（推荐）**：[docs/worker-deploy.md](docs/worker-deploy.md) —— 基于 Cloudflare Worker 的 Docker Hub 代理模板，10 分钟部署：manifest + layer 全代理（客户端不直连被墙的 layer CDN）、Worker 侧代办上游认证（不接触被墙的 auth.docker.io）、可选 token 鉴权（错误返回 404 伪装）、可选 Docker Hub 账号防匿名限额、可选 R2 layer 缓存。背景：Docker Hub 被 DNS 污染 + SNI 掐断双重封锁（GitHub 式方案实测无效），阿里云个人加速器 2024 后对公共镜像失效，自建 Worker 是当前唯一「任意镜像可拉 + 完全自主」的方案。
+
+**构建层（docker build RUN / docker run，三平台，无 sudo）**
+
+```bash
+# 一键注入 ~/.docker/config.json proxies 段（auths 严格保留）
+# docker build / docker run 自动获得代理环境变量
+dss docker on          # 代理地址自动探测（docker0 网关 / host.docker.internal）
+dss docker off         # 移除（auths 保留）
+```
+
+- **前提**：容器经宿主网关访问代理，dss 需以 `HOST=0.0.0.0 dss start` 启动（命令会探测并提示）
+- **noProxy 自动聚合**：内网段 + 你 `config.json` auths 里的 registry 主机 + daemon.json `insecure-registries`——内网镜像仓库绝不会误走代理
+- **边界**：构建内访问 `github.com` 等被 MITM 拦截的域名需自带 CA（`docker build --secret` 挂载）或改用镜像源；`registry.npmjs.org`、`pypi.org`、`deb.debian.org` 走纯隧道无需 CA
+
+<details>
+<summary>构建内访问被拦截域名的 CA 方案（点击展开）</summary>
+
+```dockerfile
+# Dockerfile 中声明 secret（不会进入镜像层）
+RUN --mount=type=secret,id=dss_ca \
+    cp /run/secrets/dss_ca /usr/local/share/ca-certificates/dss.crt && \
+    update-ca-certificates
+
+# 构建时挂载
+docker build --secret id=dss_ca,src=~/.dev-sidecar/dev-sidecar.ca.crt .
+```
+
+</details>
+
 > 子命令会自动探测代理是否在运行、证书是否已生成，并给出提示。
 > 使用了自定义 `PORT` 或 `-c` 配置文件的场景，子命令同样支持 `-c` 参数和环境变量。
 >

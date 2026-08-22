@@ -9,6 +9,7 @@ const SUBCOMMANDS = {
   npm: () => require('./npm'),
   git: () => require('./git'),
   pip: () => require('./pip'),
+  docker: () => require('./docker'),
   env: () => require('./env'),
   cert: () => require('./cert'),
   status: () => require('./status'),
@@ -30,6 +31,8 @@ const USAGE = `进程管理:
   dss env on|off        输出 shell 代理环境变量（配合 eval 使用）
   dss restore           恢复 npm/git 中指向本代理的配置（不动进程）
   dss cert              显示 CA 证书路径和安装方法
+  dss docker on         docker build 依赖安装走代理（注入 config.json）
+  dss docker mirror add <url>  配置镜像源加速 docker pull（Linux/WSL）
 
 镜像源切换（与代理正交，无需代理运行）:
   dss npm mirror <name> 切换 npm 镜像（npmmirror / ustc）
