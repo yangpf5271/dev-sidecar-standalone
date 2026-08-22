@@ -10,9 +10,9 @@
 
 ## 2. 切片二：镜像引擎
 
-- [ ] 2.1 npm/pip adapter 补 setMirror 写原语（落盘知识归 adapter，含 npm shell:true 与 pip 命令探测复用）
-- [ ] 2.2 新建 src/cli/tool-config/mirror-engine.js：createMirrorEngine({name, official, mirrors, adapter, snapshot})，switch/off/status 返回结果对象，mirror 段快照生命周期（首切快照/恢复/删段/空删父）单点实现
-- [ ] 2.3 引擎单测（假 adapter + 假快照）：企业源不丢、重复切换不覆盖快照、off 无快照回官方源、空段清理、未知镜像名
+- [x] 2.1 npm/pip adapter 补 setMirror 写原语（落盘知识归 adapter，含 npm shell:true 与 pip 命令探测复用）＋ restoreDefault 回默认原语（npm=设官方源 / pip=清除键，"如何回默认"归 adapter）
+- [x] 2.2 新建 src/cli/tool-config/mirror-engine.js：createMirrorEngine({name, official, mirrors, adapter, snapshot})，switch/off/status 返回结果对象，mirror 段快照生命周期（首切快照/恢复/删段/空删父/失败保留/历史键名兼容）单点实现
+- [x] 2.3 引擎单测（假 adapter + 假快照）：企业源不丢、重复切换不覆盖快照、off 无快照回官方源、空段清理、未知镜像名
 
 ## 3. 切片三：命令改薄
 

@@ -37,6 +37,22 @@ module.exports = (deps) => {
       return { ok: true, ...c, values: r.values }
     },
 
+    /** 写入镜像源(registry; 镜像切换引擎消费, 值归一化已由 read 提供) */
+    async setMirror (value) {
+      try {
+        const r = await deps.run('npm', ['config', 'set', 'registry', value], { shell: true })
+        if (!r.ok) return { ok: false, error: `npm config set registry 失败: ${r.error || r.stderr}` }
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e.message }
+      }
+    },
+
+    /** 回到默认源 = 显式设为官方源(npm 语义, 与历史行为一致) */
+    async restoreDefault (official) {
+      return this.setMirror(official)
+    },
+
     /**
      * 写入代理配置并自动记录快照(写配置+记快照原子化, 供 dss npm on)。
      * entries: { 键: 值 }; 失败立即返回, 已写入的键保留(下次 clean 可收尾)

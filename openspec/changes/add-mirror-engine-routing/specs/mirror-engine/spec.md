@@ -10,7 +10,7 @@
 - **THEN** 两者走同一引擎实现，仅镜像表与文案不同
 
 ### Requirement: 企业源快照保护不变量单点实现
-首次切换前 SHALL 快照当前源（重复切换不覆盖快照）；off SHALL 恢复快照原值（无快照时恢复官方源）；恢复后 SHALL 删除该工具的 mirror 快照段，mirror 父段为空时 SHALL 删除父段。该不变量 SHALL 由引擎单测锁定（企业内网源场景不丢失）。
+首次切换前 SHALL 快照当前源（重复切换不覆盖快照）；off SHALL 恢复快照原值（无快照时经 adapter 的 `restoreDefault` 原语回到默认——npm 为显式设官方源、pip 为清除键，"如何回默认"的知识归 adapter）；恢复后 SHALL 删除该工具的 mirror 快照段，mirror 父段为空时 SHALL 删除父段；恢复失败 SHALL 保留快照供重试。历史快照键名（registry/indexUrl）SHALL 兼容可读。该不变量 SHALL 由引擎单测锁定（企业内网源场景不丢失）。
 
 #### Scenario: 企业源不丢
 - **WHEN** 当前源为企业内网源，执行切换到公共镜像再执行 off
