@@ -8,21 +8,20 @@
 
 ## 快速开始
 
+**npm 安装（推荐）：**
+
+```bash
+npm install -g dev-sidecar-standalone
+dss
+```
+
 **源码运行：**
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/yangpf5271/dev-sidecar-standalone.git
 cd dev-sidecar-standalone
 npm install
 node index.js
-```
-
-**打包安装：**
-
-```bash
-npm pack
-npm install -g ./dev-sidecar-standalone-1.0.0.tgz
-dss
 ```
 
 启动后输出：
@@ -32,7 +31,7 @@ HTTP 代理:  127.0.0.1:31180    # 简单 HTTP 代理（CONNECT 隧道）
 HTTPS 代理: 127.0.0.1:31181   # HTTPS MITM 代理（拦截解密加速）
 ```
 
-> 打包安装的完整部署指南（CLI 命令、systemd、PM2、Docker、CI/CD）见 [docs/deploy-guide.md](docs/deploy-guide.md)。
+> 服务器部署（systemd、PM2、Docker、CI/CD）见 [docs/deploy-guide.md](docs/deploy-guide.md)。
 
 ---
 
@@ -48,6 +47,24 @@ HTTPS 代理: 127.0.0.1:31181   # HTTPS MITM 代理（拦截解密加速）
 | 广告拦截 | Carbon ads, BuySellAds | 拦截/中止 |
 
 > 注：`registry.npmjs.org` 等其他站点可通过 `config/default.json` 的 `dns.mapping` 自行添加 DNS 优化。
+
+---
+
+## 命令总览
+
+| 类别 | 命令 | 作用 |
+|------|------|------|
+| 启动 | `dss` / `dss start` | 前台运行 / 后台守护进程 |
+| 进程管理 | `dss stop` `restart` `status` `log` | 停止（含智能恢复）/ 重启 / 状态 / 日志 |
+| 代理配置 | `dss npm on\|off` `dss git on\|off` | 一键配置 npm/git 走代理 |
+| 环境变量 | `dss env on\|off` | 输出 shell 代理变量（配合 eval） |
+| 镜像源 | `dss npm\|pip mirror <名称>\|off` | 切换/恢复 npm/pip 国内镜像源 |
+| Docker | `dss docker mirror add\|refresh\|remove` | 镜像拉取加速（自建镜像站接入） |
+| Docker | `dss docker on\|off` | 构建层依赖安装走代理 |
+| 证书 | `dss cert` | CA 证书路径与安装方法 |
+| 恢复 | `dss restore` | 清理指向本代理的所有残留配置 |
+
+`dss -h` 查看完整帮助；各命令 `-h` 查看子命令帮助。
 
 ---
 
@@ -82,7 +99,7 @@ sudo update-ca-trust
 
 ## 使用方式
 
-### 进程管理（推荐）
+### 进程管理
 
 ```bash
 dss start              # 后台启动（守护进程）
@@ -96,29 +113,7 @@ dss status             # 运行状态 / 端口 / PID / 证书状态
 
 > 说明：直接运行 `dss`（无参数）为前台模式，Ctrl+C 停止。`dss -d` 等价于 `dss start`。
 
-### 浏览器
-
-设置 HTTP 代理为 `127.0.0.1:31180`（HTTP 代理端口），安装 CA 证书到系统信任列表后，浏览器会自动通过 HTTPS MITM 端口 `31181` 进行拦截加速。
-
-> 如果浏览器只配置 31180 而不安装 CA 证书，HTTPS 网站会退化为普通 CONNECT 隧道，域名加速（镜像替换）不生效。要使用完整加速，需安装 CA 证书。
-
-### 命令行 (curl / wget)
-
-**简单隧道（无需证书，走 HTTP 代理端口 31180）：**
-```bash
-# curl
-curl -x http://127.0.0.1:31180 https://github.com
-# wget
-wget -e use_proxy=yes -e http_proxy=http://127.0.0.1:31180 https://github.com
-```
-
-**完整 MITM 加速（需先安装 CA 证书，走 MITM 端口 31181）：**
-```bash
-# curl（需指定 CA 证书）
-curl --proxy http://127.0.0.1:31181 --cacert ~/.dev-sidecar/dev-sidecar.ca.crt https://raw.githubusercontent.com/...
-```
-
-### 一键配置（推荐）
+### 代理配置（npm / git / shell 环境变量）
 
 npm / Git / 环境变量都可以用 `dss` 子命令一键配置，无需手动敲多条命令：
 
@@ -251,9 +246,28 @@ docker build --secret id=dss_ca,src=~/.dev-sidecar/dev-sidecar.ca.crt .
 >
 > **注意：** Yarn Classic (1.x) 不读取 `.npmrc` 代理配置，Yarn 用户请使用 `dss env on` 方式。
 
-以下为各命令背后的手动配置方式，供参考或自定义时使用。
+### 手动配置方式（参考）
 
-### npm 通过代理
+以上命令背后的手动配置方式，供理解原理或自定义时使用。
+
+#### 浏览器
+
+设置 HTTP 代理为 `127.0.0.1:31180`，安装 CA 证书到系统信任列表后，浏览器会自动通过 HTTPS MITM 端口 `31181` 进行拦截加速。
+
+> 如果浏览器只配置 31180 而不安装 CA 证书，HTTPS 网站会退化为普通 CONNECT 隧道，域名加速（镜像替换）不生效。要使用完整加速，需安装 CA 证书。
+
+#### 命令行 (curl / wget)
+
+```bash
+# 简单隧道（无需证书，走 HTTP 代理端口 31180）
+curl -x http://127.0.0.1:31180 https://github.com
+wget -e use_proxy=yes -e http_proxy=http://127.0.0.1:31180 https://github.com
+
+# 完整 MITM 加速（需 CA 证书，走 MITM 端口 31181）
+curl --proxy http://127.0.0.1:31181 --cacert ~/.dev-sidecar/dev-sidecar.ca.crt https://raw.githubusercontent.com/...
+```
+
+#### npm 通过代理
 
 **简单代理（无证书，走 HTTP 代理端口 31180）：**
 ```bash
@@ -275,7 +289,7 @@ npm config delete https-proxy
 npm config delete cafile
 ```
 
-### Git 通过代理
+#### Git 通过代理
 
 dev-sidecar 提供两个端口，Git 可以各取所需：
 
@@ -304,7 +318,7 @@ git config --global --unset http.sslCAInfo
 >
 > 如果自定义了 `PORT`，HTTP 端口为 `PORT - 1`，MITM 端口为 `PORT`。
 
-### 全局系统代理
+#### 全局系统代理
 
 **简单隧道（无需证书，两个端口都走 HTTP 代理）：**
 ```bash

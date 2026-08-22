@@ -20,6 +20,13 @@
 
 ## 安装方式
 
+### npm 安装（推荐）
+
+```bash
+npm install -g dev-sidecar-standalone
+dss
+```
+
 ### npm link（开发调试）
 
 ```bash
@@ -28,22 +35,15 @@ npm link
 dss
 ```
 
-### npm pack（离线部署推荐）
+### 离线部署（npm pack）
 
 ```bash
-# 在开发机器上打包
+# 在开发机器上打包（或从 GitHub Release 下载 tgz）
 npm pack
-# 生成 dev-sidecar-standalone-1.0.0.tgz
+# 生成 dev-sidecar-standalone-x.y.z.tgz
 
 # 传到目标服务器后安装
-npm install -g ./dev-sidecar-standalone-1.0.0.tgz
-dss
-```
-
-### npm 源安装（发布后）
-
-```bash
-npm install -g dev-sidecar-standalone
+npm install -g ./dev-sidecar-standalone-x.y.z.tgz
 dss
 ```
 
