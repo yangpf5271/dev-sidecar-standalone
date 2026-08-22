@@ -24,4 +24,4 @@
 
 - [x] 4.1 全量回归：全部单测 + CI（unit job + 3×3 矩阵）全绿
 - [x] 4.2 双轴 code-review（Standards/Spec）+ 修复发现
-- [ ] 4.3 归档本变更（openspec archive），提交推送双远端；发布交接（单一 v1.5.0，用户 npm publish 后打 tag/Release）
+- [x] 4.3 归档本变更（openspec archive），提交推送双远端；发布交接（单一 v1.5.0，用户 npm publish 后打 tag/Release）
