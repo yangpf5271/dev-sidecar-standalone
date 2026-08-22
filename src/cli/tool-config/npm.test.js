@@ -134,3 +134,10 @@ test('clean: npm 命令不可用 → 结果对象报错, 不 throw', async () =>
   assert.equal(r.ok, false)
   assert.match(r.error, /不可用/)
 })
+
+test('postVerify=true(元数据): 删除后重读验证 — npm 读取是合并源', async () => {
+  const { adapter, run } = makeAdapter({ values: { proxy: OURS } })
+  await adapter.clean(ADDR)
+  // 3 个键的初始读取 + proxy 删除后的 1 次验证重读 = 4 次 get
+  assert.equal(run.calls.filter((c) => c.key.startsWith('npm config get')).length, 4)
+})
