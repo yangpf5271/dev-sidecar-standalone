@@ -82,7 +82,10 @@ docker pull mirror.你的域名.com/library/nginx   # 直接引用本域名拉�
 - 控制台提示「超过 300MB 的文件只能用 S3 API 或 Workers 上载」**不影响本方案**——Worker 写 R2 走的就是 Workers 绑定 API（上限约 5GB），且代码仅缓存 ≤512MB 的 layer
 - 超过 **512MB** 的 layer 不缓存（防止免费额度被单层吃光）
 - 客户端中途断连时，缓存写入最多延续 ~30 秒，超大层可能缓存失败（下次自然重试）
-- 桶不会自动清理——建议给 bucket 配置 Lifecycle 规则（如 30 天后删除）控制容量
+- 桶不会自动清理——建议配置 Lifecycle 规则自动回收（免费、立即生效）：
+  **R2 → 点桶名 → Settings 标签页 → Object Lifecycle Rules → Add Object Lifecycle Rule**，
+  Rule name 随意（如 `auto-cleanup`），Prefix 留空（全桶生效），
+  勾选 *Delete objects older than* **30** 天。被删的 layer 下次拉取会自动重新缓存
 - manifest 的 digest 引用走 Workers Cache API 自动缓存（不可变，安全）；tag 引用不缓存（避免拉到旧镜像）
 
 ### 7. 验证
