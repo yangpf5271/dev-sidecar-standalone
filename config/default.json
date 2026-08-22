@@ -305,8 +305,8 @@
         "quad9": {
           "server": "https://9.9.9.9/dns-query"
         },
-        "rubyfish": {
-          "server": "https://rubyfish.cn/dns-query"
+        "alidns-doh": {
+          "server": "https://dns.alidns.com/dns-query"
         }
       },
       "mapping": {
@@ -349,7 +349,7 @@
         "enabled": true,
         "interval": 300000,
         "hostnameList": ["github.com"],
-        "dnsProviders": ["cloudflare", "safe360", "rubyfish"]
+        "dnsProviders": ["cloudflare", "safe360", "alidns-doh"]
       }
     }
   }

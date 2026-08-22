@@ -1,6 +1,6 @@
 {
   "name": "dev-sidecar-standalone",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Dev-Sidecar 纯服务器版 - GitHub/Google/Docker/npm 等开发资源加速代理",
   "main": "index.js",
   "bin": {
@@ -49,9 +49,7 @@
   ],
   "dependencies": {
     "agentkeepalive": "^4.6.0",
-    "dns-over-http": "^0.2.0",
     "dns-packet": "^5.6.1",
-    "is-browser": "^2.1.0",
     "json5": "^2.2.3",
     "lodash": "^4.18.1",
     "lru-cache": "~10.4.3",
