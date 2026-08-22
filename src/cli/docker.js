@@ -13,6 +13,7 @@ const net = require('node:net')
 const dns = require('node:dns').promises
 const { spawn } = require('node:child_process')
 const { IS_WIN, resolveProxyAddress, runCommand, probePort } = require('./utils')
+const { adapters } = require('./tool-config')
 
 const HOSTS_FILE = '/etc/hosts'
 const DAEMON_JSON = '/etc/docker/daemon.json'
@@ -59,10 +60,8 @@ function isCloudflareIP (ip) {
   return CF_CIDRS.some((c) => (v & c.mask) >>> 0 === c.base)
 }
 
-function dockerConfigPath () {
-  return path.join(os.homedir(), '.docker', 'config.json')
-}
-
+// config.json 的读写独家归属 tool-config docker adapter(auths 值级保留、格式统一);
+// readJsonFile/writeJson 仍服务 daemon.json 等其他文件
 function readJsonFile (file) {
   try {
     return { ok: true, data: JSON.parse(fs.readFileSync(file, 'utf8')) }
@@ -241,7 +240,7 @@ async function collectNoProxy (extra = []) {
     'localhost', '127.0.0.1', '::1',
     '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16',
   ]
-  const cfg = readJsonFile(dockerConfigPath())
+  const cfg = adapters.docker.readDoc()
   if (cfg.ok && cfg.data && cfg.data.auths) {
     for (const key of Object.keys(cfg.data.auths)) list.push(hostOf(key))
   }
@@ -279,8 +278,8 @@ async function cmdOn (args) {
   }
 
   const noProxy = await collectNoProxy(extraNoProxy)
-  const file = dockerConfigPath()
-  const cfg = readJsonFile(file)
+  const file = adapters.docker.configPath()
+  const cfg = adapters.docker.readDoc()
   if (!cfg.ok) {
     console.error(`❌ ${file} 已损坏: ${cfg.error}`)
     process.exit(1)
@@ -292,7 +291,11 @@ async function cmdOn (args) {
     httpsProxy: proxyUrl,
     noProxy: noProxy.join(','),
   }
-  writeJson(file, data)
+  const w = adapters.docker.writeDoc(data)
+  if (!w.ok) {
+    console.error(`❌ ${w.error}`)
+    process.exit(1)
+  }
 
   console.log(`✅ 构建层代理已注入: ${file}`)
   console.log(`   httpProxy / httpsProxy → ${proxyUrl}`)
@@ -304,8 +307,8 @@ async function cmdOn (args) {
 }
 
 async function cmdOff () {
-  const file = dockerConfigPath()
-  const cfg = readJsonFile(file)
+  const file = adapters.docker.configPath()
+  const cfg = adapters.docker.readDoc()
   if (!cfg.ok) {
     console.error(`❌ ${file} 已损坏: ${cfg.error}`)
     process.exit(1)
@@ -316,7 +319,11 @@ async function cmdOff () {
   }
   delete cfg.data.proxies.default
   if (Object.keys(cfg.data.proxies).length === 0) delete cfg.data.proxies
-  writeJson(file, cfg.data)
+  const w = adapters.docker.writeDoc(cfg.data)
+  if (!w.ok) {
+    console.error(`❌ ${w.error}`)
+    process.exit(1)
+  }
   console.log(`✅ 构建层代理已移除(其余配置如 auths 原样保留): ${file}`)
 }
 
@@ -577,7 +584,7 @@ async function cmdMirrorRefresh (args = []) {
 // ---------------------------------------------------------------------------
 
 async function cmdStatus () {
-  const cfg = readJsonFile(dockerConfigPath())
+  const cfg = adapters.docker.readDoc()
   console.log('构建层(~/.docker/config.json):')
   if (cfg.ok && cfg.data && cfg.data.proxies && cfg.data.proxies.default) {
     const p = cfg.data.proxies.default

@@ -89,5 +89,6 @@ module.exports = (deps) => {
     // ---- 整文档原语(docker 命令层使用; auths 由命令层语义保证不动) ----
     readDoc,
     writeDoc,
+    configPath: configFile,
   }
 }

@@ -42,8 +42,8 @@
 
 ## 7. 切片七：docker 命令迁移（第③步）
 
-- [ ] 7.1 docker 命令内部对 config.json 的读写全部改走 docker adapter（含 dss docker on 注入与 off 清理），删除命令模块内的私有读写实现
-- [ ] 7.2 CI 的 docker build 层断言（注入/清理/auths 保留/第三方不动）全部保持绿
+- [x] 7.1 docker 命令内部对 config.json 的读写全部改走 docker adapter（含 dss docker on 注入与 off 清理），删除命令模块内的私有读写实现
+- [x] 7.2 CI 的 docker build 层断言（注入/清理/auths 保留/第三方不动）全部保持绿
 
 ## 8. 收尾
 
