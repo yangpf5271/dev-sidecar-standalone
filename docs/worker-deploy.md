@@ -67,11 +67,15 @@ docker pull mirror.你的域名.com/library/nginx   # 直接引用本域名拉�
 
 ### 6. R2 layer 缓存（可选）
 
-1. Cloudflare R2 → `Create bucket`（免费 10GB 存储/月）
-2. Worker → `Settings` → `Bindings` → `Add` → `R2 bucket`
-   - **Variable name 填 `R2_CACHE`**（推荐，绑定名即变量名）
-   - 或绑定名任意（如 `CACHE`），再在 Variables 里加 `R2_CACHE` = `CACHE`（填绑定名）
+**注意两个名字的区别**（容易混淆）：
+
+1. Cloudflare R2 → `Create bucket` → **桶名称**只能小写字母/数字/连字符，建议填 `dss-docker-cache` 之类（桶名随便起，代码不依赖它）
+2. Worker → `Settings` → `Bindings` → `Add` → `R2 bucket`，这里有两个字段：
+   - **Variable name**：填 `R2_CACHE`（大写没问题——这是 Worker 代码里的 `env.R2_CACHE`）
+   - **Bucket**：选择第 1 步创建的桶（如 `dss-docker-cache`）
 3. 二次拉取同 layer 零回源
+
+> 也支持「绑定名任意」的配法：Variable name 填 `CACHE`，再在 Worker 的 Variables 里加 `R2_CACHE` = `CACHE`（值填绑定名），但不如上面直接。
 
 已知限制：
 
