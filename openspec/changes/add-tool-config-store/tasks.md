@@ -24,8 +24,8 @@
 
 ## 4. 切片四：restore 切换到 tool-config（第①步收口一半）
 
-- [ ] 4.1 smartRestore 与 detectResidue 改为遍历 adapters（npm/git/docker 走 clean/dryRun，pip 按能力位跳过），逐工具保留现有输出语义（restored/notes 文案不变）
-- [ ] 4.2 迁移后本地冒烟：隔离假 HOME 下 stop/restore 全周期行为与切换前一致
+- [x] 4.1 smartRestore 与 detectResidue 改为遍历 adapters（npm/git/docker 走 clean/dryRun，pip 按能力位跳过），逐工具保留现有输出语义（restored/notes 文案不变）
+- [x] 4.2 迁移后本地冒烟：隔离假 HOME 下 stop/restore 全周期行为与切换前一致
 - [ ] 4.3 CI 现有 daemon start/stop + smart restore 断言全部保持绿（不改断言本身）
 
 ## 5. 切片五：status 切换到 tool-config（第①步完成，分叉消除）
