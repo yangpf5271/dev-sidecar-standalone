@@ -214,6 +214,8 @@ dss docker status
 
 `mirror add` 一条命令完成：健康检查（`/v2/` 硬阻断，`--force` 跳过）→ Cloudflare 边缘 IP 测速优选 → `/etc/hosts` 钉定 → `daemon.json` 合并写入（**保留现有全部配置**）→ 重启 docker → `docker info` 验证。配置后 `docker pull` 无感知直拉。
 
+> WSL 注意：WSL 重启时会重新生成 `/etc/hosts`，钉定行可能丢失（拉取变慢的信号）——执行 `dss docker mirror refresh` 重钉；或在 `/etc/wsl.conf` 设置 `[network]` `generateHosts = false` 永久保留。
+
 **自建镜像站（推荐）**：[docs/worker-deploy.md](docs/worker-deploy.md) —— 基于 Cloudflare Worker 的 Docker Hub 代理模板，10 分钟部署：manifest + layer 全代理（客户端不直连被墙的 layer CDN）、Worker 侧代办上游认证（不接触被墙的 auth.docker.io）、可选 token 鉴权（错误返回 404 伪装）、可选 Docker Hub 账号防匿名限额、可选 R2 layer 缓存。背景：Docker Hub 被 DNS 污染 + SNI 掐断双重封锁（GitHub 式方案实测无效），阿里云个人加速器 2024 后对公共镜像失效，自建 Worker 是当前唯一「任意镜像可拉 + 完全自主」的方案。
 
 **构建层（docker build RUN / docker run，三平台，无 sudo）**

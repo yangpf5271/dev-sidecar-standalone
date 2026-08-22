@@ -44,7 +44,9 @@ const CF_EDGE_POOL = [
 function parseCidr (cidr) {
   const [ip, bits] = cidr.split('/')
   const mask = ~((1 << (32 - Number(bits))) - 1) >>> 0
-  return { base: ipToInt(ip) & mask, mask }
+  // >>>0 必须 also 加在 base 上: & 返回有符号 32 位,首字节≥128 的段
+  // (172.64/13 等)会成为负数,与无符号比较永不相等 → 优选静默失效
+  return { base: (ipToInt(ip) & mask) >>> 0, mask }
 }
 
 function ipToInt (ip) {
@@ -354,12 +356,15 @@ async function healthCheck (parsed) {
   return { ok: r.status === 200 || r.status === 401, status: r.status, target }
 }
 
-/** 域名是否需要 CF 优选:--cf 强制 / 解析 IP 落在 CF 段自动启用;IP 字面量永不钉定 */
+/** 域名是否需要 CF 优选:--cf 强制 / 解析 IP 落在 CF 段自动启用;IP 字面量永不钉定。
+ *  IPv6 解析(2606:4700::/32 为 CF 官方段)同样视为 CF —— 部分解析器对 CF 域名
+ *  只返回 AAAA,只查 IPv4 会误判为非 CF 而跳过优选 */
 async function shouldOptimize (host, force) {
   if (/^(\d+\.)+\d+$/.test(host) || host === 'localhost') return false
   if (force) return true
   try {
-    const { address } = await dns.lookup(host, { family: 4 })
+    const { address, family } = await dns.lookup(host)
+    if (family === 6) return address.toLowerCase().startsWith('2606:4700')
     return isCloudflareIP(address)
   } catch {
     return false // 解析失败不阻断,交由常规解析
