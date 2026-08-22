@@ -32,5 +32,5 @@
 
 ## 6. 收尾
 
-- [ ] 6.1 全量回归：55+新增单测全绿、status/npm/git/docker/mirror 链路冒烟、CI unit job + 3×3 矩阵绿、双轴 code-review 一轮并处理发现
-- [ ] 6.2 归档提案（openspec archive，delta 并入 openspec/specs/），提交推送双远端；发布交接（与 v1.5.0 已就绪内容合并为单次发布，npm publish 由用户执行，tag/Release 随后）
+- [x] 6.1 全量回归：55+新增单测全绿、status/npm/git/docker/mirror 链路冒烟、CI unit job + 3×3 矩阵绿、双轴 code-review 一轮并处理发现
+- [x] 6.2 归档提案（openspec archive，delta 并入 openspec/specs/），提交推送双远端；发布交接（与 v1.5.0 已就绪内容合并为单次发布，npm publish 由用户执行，tag/Release 随后）
