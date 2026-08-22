@@ -23,6 +23,18 @@ const api = {
     const newServers = mitmproxy.createProxy(proxyOptions, (server, port, host, ssl) => {
       log.info(`代理服务已启动：${host}:${port}, ssl: ${ssl}`)
     })
+    servers = newServers
+
+    // 等待全部端口监听成功才算启动成功。
+    // 此前监听失败(如端口被占用 EADDRINUSE)只记日志, start() 仍会 resolve,
+    // 导致主程序打印"启动成功"但实际没有任何端口在工作
+    try {
+      await waitForListening(newServers)
+    } catch (e) {
+      // 关闭已绑定的端口(不留半启动状态), 让调用方以非零退出码结束
+      await api.close()
+      throw e
+    }
 
     for (const newServer of newServers) {
       newServer.on('close', () => {
@@ -35,7 +47,6 @@ const api = {
         log.error('server error', e)
       })
     }
-    servers = newServers
 
     registerProcessListener()
   },
@@ -81,6 +92,40 @@ const api = {
       }
     })
   },
+}
+
+/**
+ * 等待全部 server 监听成功; 任一 listen 失败(如端口占用)则 reject。
+ * createProxy 内部同步调用 listen, 事件均为异步派发, 返回后立即挂监听不会漏接。
+ * resolve 后残留的 once('error') 由 settled 标记屏蔽, 不影响运行期错误处理
+ */
+function waitForListening (serverList) {
+  return new Promise((resolve, reject) => {
+    let pending = serverList.length
+    let settled = false
+    if (pending === 0) return resolve()
+    for (const server of serverList) {
+      if (server.listening) {
+        if (--pending === 0) resolve()
+        continue
+      }
+      server.once('listening', () => {
+        if (settled) return
+        if (--pending === 0) {
+          settled = true
+          resolve()
+        }
+      })
+      server.once('error', (e) => {
+        if (settled) return
+        settled = true
+        const hint = e.code === 'EADDRINUSE'
+          ? '（可能已有代理实例在运行：dss status 查看状态，dss stop 停止后重试）'
+          : ''
+        reject(new Error(`代理端口监听失败 ${e.address || ''}:${e.port || ''} [${e.code}]${hint}`))
+      })
+    }
+  })
 }
 
 function registerProcessListener () {

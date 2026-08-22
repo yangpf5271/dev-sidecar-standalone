@@ -97,6 +97,18 @@ jobs:
           OUT=$(node index.js -c nope.json 2>&1) || true
           echo "$OUT" | grep -q 'nope.json' || { echo "FAIL: missing config message"; exit 1; }
 
+          # v1.5.0: 未知选项报错而不是静默启动 (如 dss -help 曾直接拉起代理)
+          if node index.js -help > /dev/null 2>&1; then
+            echo "FAIL: unknown option should exit 1"; exit 1
+          fi
+          OUT=$(node index.js -help 2>&1) || true
+          echo "$OUT" | grep -q 'dss --help' || { echo "FAIL: unknown option should hint help"; exit 1; }
+
+          # v1.5.0: 位置参数配置文件旧用法已移除, 存在的文件也按未知命令报错
+          if node index.js config/default.json > /dev/null 2>&1; then
+            echo "FAIL: positional config arg should be rejected"; exit 1
+          fi
+
           echo "CLI tests (stopped) passed"
 
       # 启动冒烟 + 端到端 + 证书生成后的完整模式
@@ -119,6 +131,16 @@ jobs:
             echo "FAIL: proxy did not become ready"; cat proxy.log; exit 1
           fi
           echo "proxy ready (PID: $PROXY_PID)"
+
+          # v1.5.0: 端口被占用时第二个实例必须以非零退出, 不能假报"启动成功"
+          if node index.js > dup.log 2>&1; then
+            echo "FAIL: duplicate instance should exit non-zero"; cat dup.log; exit 1
+          fi
+          grep -q 'EADDRINUSE' dup.log || { echo "FAIL: duplicate should report EADDRINUSE"; cat dup.log; exit 1; }
+          if grep -q '启动成功' dup.log; then
+            echo "FAIL: duplicate must not claim success"; cat dup.log; exit 1
+          fi
+          rm -f dup.log
 
           # 端到端: 普通隧道代理(非拦截域名,无需证书)
           CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -x http://127.0.0.1:31180 http://example.com)

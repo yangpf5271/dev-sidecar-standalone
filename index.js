@@ -39,7 +39,7 @@ if (DAEMON) {
 const args = process.argv.slice(2)
 
 if (args.includes('-h') || args.includes('--help')) {
-  console.log('用法: dss [选项] [配置文件路径] 或 dss <子命令>')
+  console.log('用法: dss [选项] 或 dss <子命令>')
   console.log('')
   console.log('选项:')
   console.log('  -h, --help             显示帮助信息')
@@ -87,15 +87,16 @@ const BANNER = [
 ].join('\n')
 
 /**
- * 未知命令提示：位置参数既不是已知子命令，也不是存在的配置文件
- * 按"敲错命令"处理，给出建议和命令列表，而不是 ENOENT 堆栈
+ * 未知命令提示：v1.5.0 起位置参数（旧版配置文件路径用法）已移除，
+ * 非子命令一律按未知命令处理，给出建议和命令列表
  */
 function printUnknownCommand (arg) {
-  console.error(`❌ 未知命令或配置文件不存在: ${arg}`)
+  console.error(`❌ 未知命令: ${arg}`)
   const suggestion = suggestSubcommand(arg)
   if (suggestion) {
     console.error(`   你是不是想输入: dss ${suggestion} ?`)
   }
+  console.error('   指定配置文件请使用: dss -c <配置文件路径>')
   console.error('')
   console.error('可用命令:')
   console.error(require('./src/cli').USAGE.trimEnd())
@@ -204,39 +205,32 @@ function loadConfig (configPath) {
 async function main () {
   const args = process.argv.slice(2)
   let configPath = null
-  let configFromFlag = false
 
+  // v1.5.0 起: 位置参数(旧版配置文件路径用法)已移除。
+  // -h/-v/-d 等已在 startupEntryPoint 前置处理, 走到这里仍未识别的一律报错,
+  // 不再静默忽略后启动代理 (如 dss -help 会直接把代理拉起来)
   for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--config':
-      case '-c': {
-        const value = args[++i]
-        if (!value) {
-          console.error('❌ -c/--config 需要一个配置文件路径参数')
-          console.error('   示例: dss -c ./config.json')
-          process.exit(1)
-        }
-        configPath = value
-        configFromFlag = true
-        break
+    const arg = args[i]
+    if (arg === '--config' || arg === '-c') {
+      const value = args[++i]
+      if (!value) {
+        console.error('❌ -c/--config 需要一个配置文件路径参数')
+        console.error('   示例: dss -c ./config.json')
+        process.exit(1)
       }
-      default:
-        if (!configPath && !args[i].startsWith('-')) {
-          configPath = args[i]
-        }
-        break
+      configPath = value
+    } else if (arg.startsWith('-')) {
+      console.error(`❌ 未知选项: ${arg}`)
+      console.error('   完整选项说明: dss --help')
+      process.exit(1)
+    } else {
+      printUnknownCommand(arg)
+      process.exit(1)
     }
   }
 
-  // 配置文件在 BANNER 之前校验：
-  //  - 位置参数不存在 → 大概率是敲错的命令（如 dss state），按未知命令提示
-  //  - -c 指定的文件不存在 → 明确报配置文件错误
   if (configPath && !fs.existsSync(configPath)) {
-    if (configFromFlag) {
-      console.error(`❌ 配置文件不存在: ${configPath}`)
-    } else {
-      printUnknownCommand(configPath)
-    }
+    console.error(`❌ 配置文件不存在: ${configPath}`)
     process.exit(1)
   }
 
