@@ -59,4 +59,5 @@ module.exports = {
   isSubcommand,
   dispatch,
   USAGE,
+  subcommandNames: () => Object.keys(SUBCOMMANDS),
 }

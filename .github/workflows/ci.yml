@@ -82,6 +82,18 @@ jobs:
             echo "FAIL: unsupported shell should be rejected"; exit 1
           fi
 
+          # 未知命令: 应打印可用命令列表并以 exit 1 退出,而不是 ENOENT 崩溃
+          if node index.js state > /dev/null 2>&1; then
+            echo "FAIL: unknown command should exit 1"; exit 1
+          fi
+          node index.js state 2>&1 | grep -q 'dss start' || { echo "FAIL: unknown command should print usage"; exit 1; }
+
+          # -c 指定的配置文件不存在: 友好报错
+          if node index.js -c nope.json > /dev/null 2>&1; then
+            echo "FAIL: missing config file should exit 1"; exit 1
+          fi
+          node index.js -c nope.json 2>&1 | grep -q 'nope.json' || { echo "FAIL: missing config message"; exit 1; }
+
           echo "CLI tests (stopped) passed"
 
       # 启动冒烟 + 端到端 + 证书生成后的完整模式

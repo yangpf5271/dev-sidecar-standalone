@@ -87,12 +87,73 @@ const BANNER = [
 ].join('\n')
 
 /**
+ * 未知命令提示：位置参数既不是已知子命令，也不是存在的配置文件
+ * 按"敲错命令"处理，给出建议和命令列表，而不是 ENOENT 堆栈
+ */
+function printUnknownCommand (arg) {
+  console.error(`❌ 未知命令或配置文件不存在: ${arg}`)
+  const suggestion = suggestSubcommand(arg)
+  if (suggestion) {
+    console.error(`   你是不是想输入: dss ${suggestion} ?`)
+  }
+  console.error('')
+  console.error('可用命令:')
+  console.error(require('./src/cli').USAGE.trimEnd())
+  console.error('')
+  console.error('完整选项说明: dss --help')
+}
+
+/** 编辑距离 ≤ 2 的子命令作为 "你是不是想输入" 建议 */
+function suggestSubcommand (input) {
+  const cli = require('./src/cli')
+  let best = null
+  let bestDist = 3
+  for (const name of cli.subcommandNames()) {
+    const d = editDistance(input, name)
+    if (d < bestDist) {
+      best = name
+      bestDist = d
+    }
+  }
+  return best
+}
+
+function editDistance (a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i])
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+  }
+  return dp[a.length][b.length]
+}
+
+/**
  * 加载配置文件
  */
 function loadConfig (configPath) {
   let config
   if (configPath) {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    let raw
+    try {
+      raw = fs.readFileSync(configPath, 'utf8')
+    } catch (e) {
+      console.error(`❌ 无法读取配置文件: ${configPath}`)
+      console.error(`   ${e.message}`)
+      process.exit(1)
+    }
+    try {
+      config = JSON.parse(raw)
+    } catch (e) {
+      console.error(`❌ 配置文件不是有效的 JSON: ${configPath}`)
+      console.error(`   ${e.message}`)
+      process.exit(1)
+    }
     log.info('已加载配置文件:', configPath)
   } else {
     // 默认配置
@@ -143,19 +204,40 @@ function loadConfig (configPath) {
 async function main () {
   const args = process.argv.slice(2)
   let configPath = null
+  let configFromFlag = false
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--config':
-      case '-c':
-        configPath = args[++i]
+      case '-c': {
+        const value = args[++i]
+        if (!value) {
+          console.error('❌ -c/--config 需要一个配置文件路径参数')
+          console.error('   示例: dss -c ./config.json')
+          process.exit(1)
+        }
+        configPath = value
+        configFromFlag = true
         break
+      }
       default:
         if (!configPath && !args[i].startsWith('-')) {
           configPath = args[i]
         }
         break
     }
+  }
+
+  // 配置文件在 BANNER 之前校验：
+  //  - 位置参数不存在 → 大概率是敲错的命令（如 dss state），按未知命令提示
+  //  - -c 指定的文件不存在 → 明确报配置文件错误
+  if (configPath && !fs.existsSync(configPath)) {
+    if (configFromFlag) {
+      console.error(`❌ 配置文件不存在: ${configPath}`)
+    } else {
+      printUnknownCommand(configPath)
+    }
+    process.exit(1)
   }
 
   console.log(BANNER)
