@@ -6,8 +6,8 @@
 //   3. POSIX: SIGTERM（优雅，handler 走加固后的 api.close）→ 超时 SIGKILL
 //      Windows: 无优雅信号语义，直接终止后确认
 //
-// 停止后默认智能恢复 npm/git 中指向本代理的配置（--keep-config 跳过），
-// 避免代理停止后 npm/git 指向死端口影响日常使用。
+// 停止后默认智能恢复 npm/git/docker build 层中指向本代理的配置（--keep-config 跳过），
+// 避免代理停止后各工具指向死端口影响日常使用。
 const {
   resolveProxyAddress,
   readPidFile,
@@ -105,7 +105,7 @@ async function run (args) {
 function help () {
   console.log('用法: dss stop [--keep-config]')
   console.log('')
-  console.log('停止代理进程，并默认恢复 npm/git 中指向本代理的配置')
+  console.log('停止代理进程，并默认恢复 npm/git/docker build 层中指向本代理的配置')
   console.log('（只清理 dss 设置的值，用户自己的其他代理配置不受影响）')
   console.log('')
   console.log('  --keep-config  仅停止进程，保留代理配置（临时重启场景用 dss restart）')

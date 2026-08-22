@@ -18,7 +18,7 @@ const SUBCOMMANDS = {
 
 const USAGE = `进程管理:
   dss start              后台启动代理（守护进程，日志记录到文件）
-  dss stop               停止代理并恢复 npm/git 代理配置
+  dss stop               停止代理并恢复 npm/git/docker 代理配置
   dss restart            重启代理（保留配置）
   dss log [-f] [-n N]    查看守护进程日志
   dss status             全景状态: 进程/证书信任/工具代理/镜像源/Docker
@@ -29,7 +29,7 @@ const USAGE = `进程管理:
   dss git on [--simple] 配置 git 走代理（--simple 仅 HTTP 隧道，无需证书）
   dss git off           取消 git 代理配置
   dss env on|off        输出 shell 代理环境变量（配合 eval 使用）
-  dss restore           恢复 npm/git 中指向本代理的配置（不动进程）
+  dss restore           恢复 npm/git/docker 中指向本代理的配置（不动进程）
   dss cert              显示 CA 证书路径和安装方法
   dss docker on         docker build 依赖安装走代理（注入 config.json）
   dss docker mirror add <url>  配置镜像源加速 docker pull（Linux/WSL）

@@ -73,13 +73,13 @@ async function run (args) {
     console.log('')
     console.log('  启动代理: dss   (后台运行: dss start 或 dss -d)')
 
-    // 残留配置检测：代理没在跑但 npm/git 还指向它 → 日常使用会受影响
+    // 残留配置检测：代理没在跑但 npm/git/docker 还指向它 → 日常使用会受影响
     try {
       const residue = await detectResidue(addr)
       if (residue.length > 0) {
         console.log('')
         console.log(`  ⚠️  检测到仍指向本代理的残留配置: ${residue.join(', ')}`)
-        console.log('     运行 dss restore 一键恢复，避免影响 npm/git 日常使用')
+        console.log('     运行 dss restore 一键恢复，避免影响日常使用')
       }
     } catch {
       // 检测失败（如 npm/git 均不可用）不影响状态展示
@@ -257,7 +257,7 @@ function help () {
   console.log('  - 工具代理: npm / git / pip / docker build 当前是否走代理及模式（MITM / 隧道）')
   console.log('  - 镜像源: npm / pip 当前源及是否由 dss 切换')
   console.log('  - Docker 拉取镜像源（daemon.json registry-mirrors）')
-  console.log('未运行时额外检测 npm/git 指向本代理的残留配置')
+  console.log('未运行时额外检测 npm/git/docker 指向本代理的残留配置')
 }
 
 module.exports = { run, help }

@@ -213,6 +213,21 @@ jobs:
           node index.js git on --simple > /dev/null 2>&1
           test "$(npm config get proxy)" = 'http://127.0.0.1:31180'
 
+          # 模拟 dss docker on 注入的构建层代理(auths 代表用户自己的仓库凭据)
+          mkdir -p "$HOME/.docker"
+          cat > "$HOME/.docker/config.json" <<'JSON'
+          {
+            "auths": { "corp-registry.example:5000": { "auth": "eHg6eHg=" } },
+            "proxies": {
+              "default": {
+                "httpProxy": "http://host.docker.internal:31180",
+                "httpsProxy": "http://host.docker.internal:31180",
+                "noProxy": "corp-registry.example:5000"
+              }
+            }
+          }
+          JSON
+
           # stop: 进程终止 + 自己的配置恢复 + 第三方值原样
           node index.js stop | grep -E "已停止|已恢复"
           for i in $(seq 1 15); do
@@ -230,12 +245,23 @@ jobs:
           test "$(npm config get cafile)" = "$CAFILE_BEFORE"
           test "$(git config --global --get https.proxy)" = 'http://corp-proxy.example:8080'
 
+          # docker 构建层代理应被恢复(指向本代理端口), auths 严格保留
+          node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.docker/config.json','utf8')); if(c.proxies){console.error('FAIL: docker proxies not removed');process.exit(1)} if(!c.auths||!c.auths['corp-registry.example:5000']){console.error('FAIL: docker auths lost');process.exit(1)} console.log('docker build proxy cleaned, auths kept')"
+
           # 日志文件应有内容
           test -s "$HOME/.dev-sidecar/logs/dev-sidecar.log"
 
           # restore 幂等
           node index.js restore > /dev/null 2>&1
           node index.js restore > /dev/null 2>&1
+
+          # docker 第三方代理(非本代理端口)不受 restore 影响
+          cat > "$HOME/.docker/config.json" <<'JSON'
+          { "proxies": { "default": { "httpProxy": "http://corp-proxy.example:8080" } } }
+          JSON
+          node index.js restore > /dev/null 2>&1
+          node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.docker/config.json','utf8')); if(!c.proxies||c.proxies.default.httpProxy!=='http://corp-proxy.example:8080'){console.error('FAIL: foreign docker proxy touched');process.exit(1)} console.log('foreign docker proxy untouched')"
+          rm -f "$HOME/.docker/config.json"
 
           # 清理第三方测试值
           npm config delete cafile

@@ -103,7 +103,7 @@ sudo update-ca-trust
 
 ```bash
 dss start              # 后台启动（守护进程）
-dss stop               # 停止，并自动恢复 npm/git 中指向本代理的配置
+dss stop               # 停止，并自动恢复 npm/git/docker build 层中指向本代理的配置
 dss restart            # 重启（保留配置，不断加速状态）
 dss log [-f] [-n 200]  # 查看守护进程日志（-f 持续跟随）
 dss status             # 全景状态：进程 / 证书是否已装进系统信任 / 各工具代理 / 镜像源 / Docker
