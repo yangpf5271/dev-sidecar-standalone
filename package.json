@@ -1,0 +1,60 @@
+{
+  "name": "dev-sidecar-standalone",
+  "version": "1.0.0",
+  "description": "Dev-Sidecar 纯服务器版 - GitHub/Google/Docker/npm 等开发资源加速代理",
+  "main": "index.js",
+  "bin": {
+    "dss": "index.js"
+  },
+  "preferGlobal": true,
+  "license": "MPL-2.0",
+  "author": "yangpf5271",
+  "keywords": [
+    "dev-sidecar",
+    "proxy",
+    "mitm",
+    "github",
+    "mirror",
+    "acceleration",
+    "dns",
+    "docker",
+    "npm",
+    "china"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yangpf5271/dev-sidecar-standalone.git"
+  },
+  "homepage": "https://github.com/yangpf5271/dev-sidecar-standalone#readme",
+  "bugs": {
+    "url": "https://github.com/yangpf5271/dev-sidecar-standalone/issues"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "files": [
+    "index.js",
+    "config/",
+    "src/",
+    "docs/",
+    "Dockerfile",
+    "docker-compose.yml",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "agentkeepalive": "^4.6.0",
+    "dns-over-http": "^0.2.0",
+    "dns-packet": "^5.6.1",
+    "json5": "^2.2.3",
+    "lodash": "^4.18.1",
+    "lru-cache": "~10.4.3",
+    "node-forge": "^1.4.0",
+    "tunnel-agent": "^0.6.0"
+  }
+}

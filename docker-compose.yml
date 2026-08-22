@@ -1,0 +1,17 @@
+version: "3"
+services:
+  dev-sidecar:
+    build: .
+    container_name: dev-sidecar
+    restart: unless-stopped
+    ports:
+      - "31180:31180"   # HTTP 代理端口
+      - "31181:31181"   # HTTPS MITM 端口
+    environment:
+      - HOST=0.0.0.0
+      - PORT=31181
+    volumes:
+      - dev-sidecar-data:/root/.dev-sidecar
+
+volumes:
+  dev-sidecar-data:

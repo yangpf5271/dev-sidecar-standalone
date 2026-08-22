@@ -1,0 +1,17 @@
+node_modules/
+*.log
+.DS_Store
+npm-debug.log*
+test-*.js
+
+# 证书和密钥（运行时生成，不应提交）
+*.pem
+*.crt
+*.key
+
+# 打包产物
+*.tgz
+
+# 环境变量
+.env
+.env.*

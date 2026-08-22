@@ -1,0 +1,290 @@
+Mozilla Public License Version 2.0
+==================================
+
+1. Definitions
+--------------
+
+1.1. "Contributor"
+    means each individual or legal entity that creates, contributes to
+    the creation of, or owns Covered Software.
+
+1.2. "Contributor Version"
+    means the combination of the Contributions of others (if any) used
+    by a Contributor and that particular Contributor's Contribution.
+
+1.3. "Contribution"
+    means Covered Software of a particular Contributor.
+
+1.4. "Covered Software"
+    means Source Code Form to which an individual Contributor can be
+    granted rights as described in Section 3, Licensor Contributions to
+    the software.
+
+1.5. "Incompatible With Secondary Licenses"
+    means
+
+    (a) that the initial Contributor has attached the notice described
+        in Exhibit B to the Covered Software; or
+
+    (b) that the Covered Software was made available under the terms of
+        version 1.1 or earlier of the License, but not also under the
+        terms of a Secondary License.
+
+1.6. "Executable Form"
+    means any form of the work other than Source Code Form.
+
+1.7. "Larger Work"
+    means a work that combines Covered Software with other material, in
+    a separate file or files, that is not Covered Software.
+
+1.8. "License"
+    means this document.
+
+1.9. "Licensable"
+    means having the right to grant, to the maximum extent possible,
+    whether at the time of the initial grant or subsequently, any and
+    all of the rights conveyed by this License.
+
+1.10. "Modifications"
+    means any of the following:
+
+    (a) any file in Source Code Form that results from an addition to,
+        deletion from, or modification of the contents of Covered
+        Software; or
+
+    (b) any new file in Source Code Form that contains any Covered
+        Software.
+
+1.11. "Patent Claims" of a Contributor
+    means any patent claim(s), including without limitation, method,
+    process, and apparatus claims, which any Contributor would be able
+    to license without infringing the patent rights of other parties
+    (other than Contributor's own patent rights), and which Contributor
+    would have the right to license without infringing the patent
+    rights of other parties (other than Contributor's own patent
+    rights), and which are necessarily infringed by the exercise of
+    the rights granted under this License to the Covered Software.
+
+1.12. "Secondary License"
+    means either the GNU General Public License, Version 2.0, the GNU
+    Lesser General Public License, Version 2.1, the GNU Affero General
+    Public License, Version 3.0, or the Eclipse Public License 1.0.
+
+1.13. "Source Code Form"
+    means the form of the work preferred for making modifications.
+
+1.14. "You" (or "Your")
+    means an individual or a legal entity exercising rights under this
+    License. For legal entities, "You" includes any entity that
+    controls, is controlled by, or is under common control with You.
+    For purposes of this definition, "control" means (a) the power,
+    direct or indirect, to cause the direction or management of such
+    entity, whether by contract or otherwise, or (b) ownership of more
+    than fifty percent (50%) of the outstanding shares or beneficial
+    ownership of such entity.
+
+2. License Grants and Conditions
+--------------------------------
+
+2.1. Grants
+    Each Contributor hereby grants You a world-wide, royalty-free,
+    non-exclusive license:
+
+    (a) under intellectual property rights (other than patent or
+        trademark) Licensable by such Contributor to use, copy, modify,
+        make available, publicly perform, display, distribute, and
+        exploit its Contributions, and any Derivative Works thereof,
+        in Source Code Form and Executable Form; and
+
+    (b) under Patent Claims of such Contributor to make, use, sell,
+        offer for sale, have made, distribute, and otherwise exploit
+        its Contributions, and any Derivative Works thereof, in Source
+        Code Form and Executable Form; and
+
+    (c) under Patent Claims of such Contributor that are necessarily
+        infringed by the exercise of rights under Section 2.1(b) to
+        make, use, sell, offer for sale, have made, distribute, and
+        otherwise exploit its Derivative Works, in Source Code Form and
+        Executable Form, where the exercise of such rights is
+        infringing only to the extent that such exercise of rights
+        under Section 2.1(b) is infringing.
+
+2.2. Effective Date
+    The licenses granted in Section 2.1 with respect to any
+    Contribution become effective for each Contribution on the date
+    the Contributor first distributes such Contribution.
+
+2.3. Limitations on Patent License
+    Expressly limited to patent claims that are necessarily infringed
+    by the exercise of the rights granted under this License by the
+    Contributor. No rights are granted under this License to
+   Contributor's upstream licensors or any other party.
+
+2.4. (a) Notwithstanding the foregoing, no patent license is granted
+        by a Contributor for any patent that is not necessarily
+        infringed by the exercise of rights granted under this License.
+
+     (b) Each Contributor disclaims any liability for any claim that
+        would be infringing but for the preceding paragraph, including
+        any claim based on any patent that is not necessarily
+        infringed by the exercise of rights granted under this License.
+
+2.5. (a) You are not granted any rights under this License to
+        exercise any patent rights in any Secondary License, and this
+        License does not grant You any patent license that would
+        otherwise be available under any Secondary License.
+
+     (b) If any Contributor has licensed its Contributions under a
+        Secondary License, and You exercise rights under this License
+        in any Covered Software that is also licensed under a
+        Secondary License, You are not granted any patent license
+        under any Secondary License for such Covered Software.
+
+2.6. Termination
+    If You assert a patent infringement claim against a Contributor or
+    any Contributor's Licensee, alleging that the Covered Software or
+    any Contribution constitutes direct or contributory patent
+    infringement, then (a) the licenses granted by such Contributor
+    under Sections 2.1(a) and 2.1(b) will terminate effective
+    immediately, and (b) this License will terminate in its entirety
+    effective immediately upon any termination of Your patent license,
+    and (c) this License will terminate in its entirety effective
+    immediately upon any termination of Your patent license, and
+    (d) this License will terminate in its entirety effective
+    immediately upon any termination of Your patent license, and
+    (e) this License will terminate in its entirety effective
+    immediately upon any termination of Your patent license.
+
+2.7. Redistribution
+    You may reproduce and distribute copies of the Covered Software in
+    Source Code Form or Executable Form, provided that You meet the
+    following conditions:
+
+    (a) You must include a copy of this License in all copies of the
+        Covered Software;
+
+    (b) You must cause any Modified files to carry prominent notices
+        stating that You changed the files; and
+
+    (c) You must retain, in the Source Code Form of any Derivative
+        Works that You distribute, all copyright, patent, trademark,
+        and attribution notices present in the Covered Software (as
+        they appear in the Source Code Form), excluding any notices
+        that do not pertain to any part of the Covered Software; and
+
+    (d) You may add Your own copyright notices and attribution notices
+        to Derivative Works that You distribute, alongside or as an
+        addendum to the NOTICE text from the Covered Software, provided
+        that such additional attribution notices cannot be construed as
+        modifying the License.
+
+2.8. You may add Your own copyright statements to Your Derivative
+    Works and may provide additional or different license terms and
+    conditions for use, reproduction, or distribution of Your
+    Derivative Works, or for any technology that You license to
+    third parties, provided that Your compliance with this License is
+    not affected.
+
+3. Secondary Licenses
+---------------------
+
+3.1. (a) Contributor may choose to distribute its Contribution under
+        the terms of a Secondary License, provided that Contributor
+        has not already licensed the Contribution under any other
+        license, including any Secondary License.
+
+     (b) Contributor may not add any additional obligations or
+        restrictions on the exercise of any rights granted under this
+        License.
+
+3.2. (a) If You distribute any Covered Software under a Secondary
+        License, You must also make the Covered Software available
+        under the terms of this License.
+
+     (b) If You distribute any Covered Software under a Secondary
+        License, You must include in the NOTICE file accompanying
+        the Covered Software a statement that the Covered Software
+        is also available under the terms of this License.
+
+4. Disclaimer of Warranty
+-------------------------
+
+     Covered Software is provided under this License on an "as is"
+     basis, without warranty of any kind, either expressed, implied, or
+     statutory, including, without limitation, warranties that the
+     Covered Software is free of defects, merchantable, fit for a
+     particular purpose or non-infringing. The entire risk as to the
+     quality and performance of the Covered Software is with You.
+     Should any Covered Software prove defective in any respect, You
+     (not any Contributor) assume the cost of any necessary servicing,
+     repair, or correction. This disclaimer of warranty constitutes an
+     essential part of this License. No use of any Covered Software is
+     authorized under this License except under this disclaimer.
+
+5. Termination
+--------------
+
+5.1. The rights granted under this License will terminate automatically
+     and immediately if You fail to comply with any of its terms.
+
+5.2. If You institute patent litigation against any entity (including
+     a cross-claim or counterclaim in a lawsuit) alleging that the
+     Covered Software or any Contribution constitutes direct or
+     contributory patent infringement, then (a) the licenses granted
+     by such Contributor under Sections 2.1(a) and 2.1(b) will
+     terminate effective immediately, and (b) this License will
+     terminate in its entirety effective immediately.
+
+6. Disclaimer of Liability
+--------------------------
+
+     Except as required by applicable law, in no event and under no
+     legal theory, whether tort (including negligence), contract, or
+     otherwise, shall any Contributor be liable to You for damages,
+     including any direct, indirect, special, incidental, or
+     consequential damages of any character arising as a result of this
+     License or the use or inability to use the Covered Software
+     (including but not limited to damages for loss of goodwill, work
+     stoppage, computer failure or malfunction, or any and all other
+     commercial damages or losses), even if such Contributor has been
+     advised of the possibility of such damages.
+
+7. Litigation
+-------------
+
+     This License shall be governed by the laws of the State of
+     California, United States of America, without regard to its
+     conflict of law provisions. Any litigation relating to this
+     License shall be subject to the jurisdiction of the federal
+     courts located within the State of California, and the parties
+     hereby consent to the jurisdiction of such courts.
+
+8. Miscellaneous
+----------------
+
+     This License represents the complete agreement concerning the
+     subject matter hereof. If any provision of this License is held
+     to be unenforceable, such provision shall be reformed only to the
+     extent necessary to make it enforceable. This License shall be
+     governed by the laws of the State of California, United States
+     of America, without regard to its conflict of law provisions.
+
+9. Notice
+---------
+
+     You must inform all recipients of Covered Software of this
+     License and that this License governs the use of the Covered
+     Software.
+
+EXHIBIT A - Mozilla Public License 2.0
+---------------------------------------
+
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+EXHIBIT B - "Incompatible With Secondary Licenses" Notice
+---------------------------------------------------------
+
+    This Source Code Form is "Incompatible With Secondary Licenses",
+    as defined by the Mozilla Public License, v. 2.0.
