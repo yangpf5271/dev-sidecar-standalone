@@ -1,0 +1,82 @@
+// npm adapter — npm 代理配置(.npmrc)的读写与清理
+// npm 在 Windows 上是 npm.cmd, 必须 shell:true; 'null'/'undefined' 是未设置哨兵
+const { normalizeProxyUrlValue, classifyValues, buildProxyCandidates, buildCertCandidates, normPathValue } = require('./shared')
+
+module.exports = (deps) => {
+  const KEYS = ['proxy', 'https-proxy', 'cafile']
+
+  const readKey = async (key) => {
+    const r = await deps.run('npm', ['config', 'get', key], { shell: true })
+    if (r.error && /ENOENT/i.test(r.error)) throw new Error('npm 命令不可用')
+    return r.ok ? normalizeProxyUrlValue(r.stdout) : null
+  }
+
+  return {
+    name: 'npm',
+    capabilities: { proxy: true, mirror: true },
+
+    /** values: { http: proxy, https: https-proxy, ca: cafile, mirror: registry } */
+    async read () {
+      try {
+        const [http, https, ca, mirror] = await Promise.all([
+          readKey('proxy'),
+          readKey('https-proxy'),
+          readKey('cafile'),
+          readKey('registry'),
+        ])
+        return { ok: true, values: { http, https, ca, mirror } }
+      } catch (e) {
+        return { ok: false, error: e.message, values: null }
+      }
+    },
+
+    async classify (addr) {
+      const r = await this.read()
+      if (!r.ok) return r
+      const c = classifyValues(r.values, addr)
+      return { ok: true, ...c, values: r.values }
+    },
+
+    /**
+     * 严格清理: proxy/https-proxy 精确候选集匹配, cafile 路径归一化后精确匹配。
+     * 删除后重读验证(env/.npmrc 覆盖场景记入 notes); 段内无用户数据时清快照段。
+     */
+    async clean (addr, { dryRun = false } = {}) {
+      try {
+        const snap = deps.snapshot.read()
+        const candidates = buildProxyCandidates(addr, snap)
+        const certs = buildCertCandidates(deps.homedir, snap)
+        const removed = []
+        const notes = []
+        let sectionClean = true
+
+        for (const key of KEYS) {
+          const value = await readKey(key)
+          if (value == null) continue
+          const matched = key === 'cafile'
+            ? [...certs].some((c) => normPathValue(c) === normPathValue(value))
+            : candidates.has(value)
+          if (matched) {
+            if (!dryRun) {
+              await deps.run('npm', ['config', 'delete', key], { shell: true })
+              const after = await readKey(key)
+              if (after != null) {
+                notes.push(`npm ${key} 删除后仍生效（可能来自环境变量或项目级 .npmrc），请手工检查`)
+              }
+            }
+            removed.push(`npm ${key}`)
+          } else if (snap.npm && snap.npm[key] === value) {
+            sectionClean = false
+          }
+        }
+
+        if (!dryRun && snap.npm && sectionClean) {
+          deps.snapshot.clearTool('npm')
+        }
+        return { ok: true, removed, notes }
+      } catch (e) {
+        return { ok: false, error: e.message, removed: [], notes: [] }
+      }
+    },
+  }
+}

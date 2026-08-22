@@ -33,12 +33,15 @@
     "url": "https://github.com/yangpf5271/dev-sidecar-standalone/issues"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test"
   },
   "files": [
     "index.js",
     "config/",
     "src/",
+    "!src/**/*.test.js",
+    "!src/**/helpers.js",
     "docs/",
     "Dockerfile",
     "docker-compose.yml",
