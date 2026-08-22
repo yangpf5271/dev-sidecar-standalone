@@ -104,6 +104,63 @@ wget -e use_proxy=yes -e http_proxy=http://127.0.0.1:31180 https://github.com
 curl --proxy http://127.0.0.1:31181 --cacert ~/.dev-sidecar/dev-sidecar.ca.crt https://raw.githubusercontent.com/...
 ```
 
+### 一键配置（推荐）
+
+npm / Git / 环境变量都可以用 `dss` 子命令一键配置，无需手动敲多条命令：
+
+```bash
+# npm 走代理（简单模式，无需证书）
+dss npm on
+
+# npm 完整加速（MITM 模式，需已安装 CA 证书）
+dss npm on --mitm
+
+# 取消 npm 代理
+dss npm off
+
+# 查看当前配置
+dss npm status
+```
+
+```bash
+# git 走代理（完整模式：HTTP + HTTPS MITM + CA 证书）
+dss git on
+
+# git 简单模式（仅 HTTP 隧道，无需证书）
+dss git on --simple
+
+# 取消 git 代理
+dss git off
+
+# 查看当前配置
+dss git status
+```
+
+```bash
+# 当前 shell 环境变量（需配合 eval / iex 生效）
+eval "$(dss env on)"          # bash / zsh
+dss env on | iex              # PowerShell
+eval "$(dss env off)"         # 取消代理
+
+# 指定 shell 格式
+dss env on --shell cmd
+```
+
+```bash
+# 查看代理运行状态
+dss status
+
+# 查看 CA 证书路径和安装方法
+dss cert
+```
+
+> 子命令会自动探测代理是否在运行、证书是否已生成，并给出提示。
+> 使用了自定义 `PORT` 或 `-c` 配置文件的场景，子命令同样支持 `-c` 参数和环境变量。
+>
+> **注意：** Yarn Classic (1.x) 不读取 `.npmrc` 代理配置，Yarn 用户请使用 `dss env on` 方式。
+
+以下为各命令背后的手动配置方式，供参考或自定义时使用。
+
 ### npm 通过代理
 
 **简单代理（无证书，走 HTTP 代理端口 31180）：**

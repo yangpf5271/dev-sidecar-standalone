@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+// 子命令分发（npm/git/env/cert/status）必须在最前：
+//  1. 早于 daemon 检查——避免 "dss npm -d" 错误 fork 守护进程
+//  2. 早于 main() ——避免 BANNER 刷屏和 require 副作用
+;(async () => {
+  const cliArgs = process.argv.slice(2)
+  const cli = require('./src/cli')
+  if (cli.isSubcommand(cliArgs[0])) {
+    try {
+      await cli.dispatch(cliArgs[0], cliArgs.slice(1))
+    } catch (e) {
+      console.error('❌ 子命令执行失败:', e.message)
+      process.exit(1)
+    }
+    return
+  }
+  startupEntryPoint(cli)
+})()
+
+function startupEntryPoint (cli) {
 // linux daemon support — 提前解析，避免 daemon fork 后重复加载
 const DAEMON = process.argv.includes('--daemon') || process.argv.includes('-d')
 const VERSION = require('./package.json').version
@@ -20,14 +39,17 @@ if (DAEMON) {
 
 // 快速参数检查：-h/-V 在 require 模块之前退出，避免副作用日志
 const args = process.argv.slice(2)
+
 if (args.includes('-h') || args.includes('--help')) {
-  console.log('用法: dss [选项] [配置文件路径]')
+  console.log('用法: dss [选项] [配置文件路径] 或 dss <子命令>')
   console.log('')
   console.log('选项:')
   console.log('  -h, --help             显示帮助信息')
   console.log('  -v, -V, --version      显示版本号')
   console.log('  -d, --daemon           后台守护进程模式 (Linux/Mac)')
   console.log('  -c, --config <path>    指定配置文件路径')
+  console.log('')
+  console.log(require('./src/cli').USAGE)
   console.log('')
   console.log('环境变量:')
   console.log('  PORT                   覆盖代理端口')
@@ -38,6 +60,8 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log('  dss                               默认启动 (127.0.0.1:31181)')
   console.log('  dss -c ./config.json              使用自定义配置')
   console.log('  dss -d                            后台守护进程')
+  console.log('  dss npm on                        一键配置 npm 走代理')
+  console.log('  dss status                        查看代理运行状态')
   console.log('  PORT=8080 dss                     自定义端口 8080')
   console.log('  HOST=0.0.0.0 PORT=8080 dss        监听所有网卡')
   process.exit(0)
@@ -187,3 +211,4 @@ async function main () {
 // 启动
 process.title = 'dev-sidecar-standalone'
 main()
+} // end of startupEntryPoint
