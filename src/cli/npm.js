@@ -159,7 +159,7 @@ async function mirrorOff () {
     console.error(`❌ 恢复 npm 源失败: ${r.error}`)
     process.exit(1)
   }
-  console.log(`✅ npm 源已恢复: ${r.target || NPM_OFFICIAL}${r.saved ? '（来自切换前快照）' : ''}`)
+  console.log(`✅ npm 源已恢复: ${r.target || NPM_OFFICIAL}${r.target ? '（来自切换前快照）' : ''}`)
 }
 
 async function mirrorStatus () {
@@ -176,4 +176,4 @@ async function mirrorStatus () {
   console.log(`  ${'npm'.padEnd(12)} 官方源  ${NPM_OFFICIAL}（off 未有快照时恢复到它）`)
 }
 
-module.exports = { run, help, NPM_MIRRORS, NPM_OFFICIAL }
+module.exports = { run, help, NPM_MIRRORS, NPM_OFFICIAL, mirrorEngine }

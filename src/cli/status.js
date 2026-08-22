@@ -8,14 +8,13 @@ const {
   runCommand,
   probePort,
   readPidFile,
-  readSnapshot,
   detectCertTrust,
   isProcessAlive,
   verifyProcessIdentity,
 } = require('./utils')
 const { adapters } = require('./tool-config')
-const { NPM_MIRRORS, NPM_OFFICIAL } = require('./npm')
-const { PIP_MIRRORS, PIP_OFFICIAL } = require('./pip')
+const { NPM_OFFICIAL, mirrorEngine: npmMirrorEngine } = require('./npm')
+const { PIP_OFFICIAL, mirrorEngine: pipMirrorEngine } = require('./pip')
 const { detectResidue } = require('./restore-config')
 
 async function run (args) {
@@ -91,13 +90,14 @@ async function run (args) {
 // 匹配语义来自 tool-config store 的 classify(宽松展示语义) — 与清理同源
 // ---------------------------------------------------------------------------
 async function collectTools (addr) {
-  const snap = readSnapshot()
-  const [npmR, gitR, pipR, dockerR, dockerPull] = await Promise.all([
+  const [npmR, gitR, pipR, dockerR, dockerPull, npmMirror, pipMirror] = await Promise.all([
     adapters.npm.classify(addr),
     adapters.git.classify(addr),
     adapters.pip.classify(addr),
     adapters.docker.classify(addr),
     collectDockerPull(),
+    npmMirrorEngine.status(),
+    pipMirrorEngine.status(),
   ])
 
   const proxyParts = [
@@ -107,8 +107,8 @@ async function collectTools (addr) {
     `docker build ${proxyBadge(dockerR)}`,
   ]
   const mirrorParts = [
-    `npm ${mirrorLabel(mirrorOf(npmR), NPM_OFFICIAL, NPM_MIRRORS, snap.mirror && snap.mirror.npm)}`,
-    `pip ${mirrorLabel(mirrorOf(pipR), PIP_OFFICIAL, PIP_MIRRORS, snap.mirror && snap.mirror.pip)}`,
+    `npm ${mirrorLabel(npmMirror, NPM_OFFICIAL)}`,
+    `pip ${mirrorLabel(pipMirror, PIP_OFFICIAL)}`,
   ]
   const dockerParts = [
     `pull 镜像源 ${dockerPull.mode ? `✅ ${dockerPull.extra}` : '未配置'}`,
@@ -122,8 +122,6 @@ async function collectTools (addr) {
   }
 }
 
-const mirrorOf = (r) => (r.ok && r.values ? r.values.mirror : null)
-
 /** classify 结果 → 展示徽标; 展示语义宽松, "看起来像就提醒"(other 显示原值) */
 function proxyBadge (r) {
   if (!r || !r.ok || r.mode === 'none') return '—'
@@ -133,14 +131,14 @@ function proxyBadge (r) {
   return `✅ ${mode}${caMissing ? ' (缺 CA 配置)' : ''}`
 }
 
-/** 镜像源显示：官方 → 默认；已知镜像 → 名称(+dss 标记)；其他 → 原样(企业源等)。尾部斜杠归一化后比较 */
-function mirrorLabel (current, official, mirrors, snapshotSaved) {
-  const norm = (u) => u.replace(/\/+$/, '')
-  if (!current) return '(未设置)'
-  if (norm(current) === norm(official)) return '默认'
-  const known = Object.values(mirrors).find(m => norm(m.url) === norm(current))
-  if (known) return snapshotSaved ? `${known.name} [dss切换]` : known.name
-  return `${current} [自定义]`
+/** 镜像源显示（数据来自镜像引擎 status，与 dss npm/pip mirror 同源）：
+ *  官方 → 默认；表内 → 名称(+dss 标记)；其他 → 原样(企业源等)；读失败 → 获取失败 */
+const normUrl = (u) => u.replace(/\/+$/, '')
+function mirrorLabel (st, official) {
+  if (!st.current) return st.readError ? '获取失败' : '(未设置)'
+  if (normUrl(st.current) === normUrl(official)) return '默认'
+  if (st.known) return st.saved ? `${st.known} [dss切换]` : st.known
+  return `${st.current} [自定义]`
 }
 
 /** 拉取镜像源：Linux/mac 直接读 daemon.json；Windows 经 WSL 读（WSL 冷启动可能较慢，带超时防挂起） */

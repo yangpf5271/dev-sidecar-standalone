@@ -19,6 +19,21 @@ test('clean: 显式 no-op — 用户自设 global.proxy 哪怕指向本代理也
   assert.deepEqual(r.notes, [])
 })
 
+test('detect: 命令探测知识归 adapter 单点(命令层经此复用)', async () => {
+  const run = fakeRun([
+    ['pip --version', { ok: false, code: 1, stdout: '', stderr: '' }],
+    ['pip3 --version', { ok: true, stdout: 'pip 24.0', stderr: '' }],
+  ])
+  const adapter = createPip({ run, homedir: () => '/tmp/x', snapshot: snap })
+  assert.equal(await adapter.detect(), 'pip3')
+
+  const none = fakeRun([
+    ['pip --version', { ok: false, code: 1, stdout: '', stderr: '' }],
+    ['pip3 --version', { ok: false, code: 1, stdout: '', stderr: '' }],
+  ])
+  assert.equal(await createPip({ run: none, homedir: () => '/tmp/x', snapshot: snap }).detect(), null)
+})
+
 test('read: pip/pip3 探测 + 代理与镜像值', async () => {
   const run = fakeRun([
     ['pip --version', { ok: false, code: 1, stdout: '', stderr: '' }],

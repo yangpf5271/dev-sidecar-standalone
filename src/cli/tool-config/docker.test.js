@@ -77,3 +77,48 @@ test('clean dryRun: 探测不落盘', async () => {
   assert.equal(fs.readFileSync(path.join(home.dir, '.docker', 'config.json'), 'utf8'), before)
   home.cleanup()
 })
+
+test('setProxy: 注入 proxies.default — auths 逐键保留 + 统一格式', async () => {
+  const { adapter, home } = makeAdapter({
+    auths: { 'corp-registry.example:5000': { auth: 'dGVzdA==' } },
+  })
+  const r = adapter.setProxy({
+    httpProxy: 'http://host.docker.internal:31180',
+    httpsProxy: 'http://host.docker.internal:31180',
+    noProxy: 'corp-registry.example:5000',
+  })
+  assert.equal(r.ok, true)
+  const after = JSON.parse(fs.readFileSync(path.join(home.dir, '.docker', 'config.json'), 'utf8'))
+  assert.equal(after.proxies.default.httpProxy, 'http://host.docker.internal:31180')
+  assert.equal(after.proxies.default.noProxy, 'corp-registry.example:5000')
+  assert.deepEqual(after.auths, { 'corp-registry.example:5000': { auth: 'dGVzdA==' } })
+  const raw = fs.readFileSync(path.join(home.dir, '.docker', 'config.json'), 'utf8')
+  assert.match(raw, /\n$/, '写盘统一尾换行')
+  home.cleanup()
+})
+
+test('setProxy: config.json 不存在时连同目录创建', async () => {
+  const { adapter, home } = makeAdapter(undefined)
+  const r = adapter.setProxy({ httpProxy: 'http://gw:31180', httpsProxy: 'http://gw:31180', noProxy: '' })
+  assert.equal(r.ok, true)
+  const after = JSON.parse(fs.readFileSync(path.join(home.dir, '.docker', 'config.json'), 'utf8'))
+  assert.equal(after.proxies.default.httpProxy, 'http://gw:31180')
+  home.cleanup()
+})
+
+test('clearProxy: 移除注入 — auths 保留, changed:true; 无配置幂等 changed:false', async () => {
+  const { adapter, home } = makeAdapter({
+    auths: { 'corp-registry.example:5000': { auth: 'dGVzdA==' } },
+    proxies: { default: { httpProxy: 'http://host.docker.internal:31180' } },
+  })
+  const r = await adapter.clearProxy()
+  assert.equal(r.ok, true)
+  assert.equal(r.changed, true)
+  const after = JSON.parse(fs.readFileSync(path.join(home.dir, '.docker', 'config.json'), 'utf8'))
+  assert.equal(after.proxies, undefined)
+  assert.deepEqual(Object.keys(after.auths), ['corp-registry.example:5000'])
+  const r2 = await adapter.clearProxy()   // 再次移除: 幂等
+  assert.equal(r2.ok, true)
+  assert.equal(r2.changed, false)
+  home.cleanup()
+})

@@ -47,18 +47,30 @@ adapter 的所有操作 SHALL 返回结果对象（成功含数据、失败含 e
 - **THEN** 返回 { ok: false, error } 描述命令不可用，调用方决定提示方式，进程不因此自行退出
 
 ### Requirement: 快照工具段生命周期
-写入工具配置（on 路径）时 tool-config store SHALL 自动记录快照（写配置与记快照原子化，不存在半状态）；清理完成且该工具段无残留用户数据时 SHALL 自动清除快照段。清理失败（删除后仍生效 / unset 失败）时 SHALL 保留快照段供下次重试。范围限定于按值匹配的工具（npm/git）；docker 的 isOurs 为端口匹配（见"两种匹配语义"），快照候选集对其无作用，不记录也不消费。快照的 mirror 段不属于本能力范围。
+写入工具配置（on 路径）时 tool-config store SHALL 自动记录快照，且 SHALL 按实际写入推进：任一键写入失败时，此前已成功写入的键 MUST 已并入快照段（快照即实际写入值），不存在"有配置无快照"的半状态；清理完成且该工具段无残留用户数据时 SHALL 自动清除快照段。清理失败（删除后仍生效 / unset 失败）时 SHALL 保留快照段供下次重试，且此类项 SHALL NOT 计入 removed 清单——removed 仅含已验证不再生效的项。范围限定于按值匹配的工具（npm/git）；docker 的 isOurs 为端口匹配（见"两种匹配语义"），快照候选集对其无作用，不记录也不消费。快照的 mirror 段不属于本能力范围。
 
 #### Scenario: 清理后快照段收敛
 - **WHEN** 某工具通过 clean 清理了全部本代理配置且段内无其他用户数据
 - **THEN** 该工具的快照段被自动删除
 
+#### Scenario: 写入中途失败不留半状态
+- **WHEN** setProxy 多键写入中某键失败而提前返回
+- **THEN** 此前已成功写入的键已并入快照段，后续 clean 仍可依快照清理这些键
+
+#### Scenario: 删除后仍生效不入 removed
+- **WHEN** npm 键删除后重读仍生效（环境变量或项目级 .npmrc 覆盖）
+- **THEN** 该键记入 notes、快照段保留，且不出现在 removed 清单
+
 ### Requirement: docker 配置文件独家读写
-`~/.docker/config.json` 的读取与写入 SHALL 仅由 docker adapter 拥有：写盘统一 2 空格缩进 + 尾换行；auths 等用户字段 MUST 在 JSON 值级完整保留；proxies.default 仅在指向本代理时清理。
+`~/.docker/config.json` 的读取与写入 SHALL 仅由 docker adapter 拥有：写盘统一 2 空格缩进 + 尾换行；auths 等用户字段 MUST 在 JSON 值级完整保留；构建层代理的注入与移除（on/off 语义）SHALL 由 adapter 的 setProxy/clearProxy 提供，命令层 SHALL NOT 自行拼装 proxies.default 结构；proxies.default 仅在指向本代理时清理。
 
 #### Scenario: auths 保留与格式统一
 - **WHEN** clean 清理了注入的 proxies.default
 - **THEN** auths 全部键值保留，文件以统一格式（2 空格缩进 + 尾换行）写回
+
+#### Scenario: 注入经 adapter
+- **WHEN** dss docker on 注入构建层代理
+- **THEN** proxies.default 由 docker adapter 的 setProxy 写入，auths 原样保留，文件保持统一格式
 
 ### Requirement: 展示与清理同源
 `dss status` 展示的工具代理状态与 `dss stop`/`dss restore` 实际清理的判定 SHALL 来自同一份匹配知识（tool-config store），不存在第二套判定实现。

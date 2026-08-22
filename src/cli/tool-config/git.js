@@ -12,7 +12,6 @@ module.exports = (deps) => {
   }
 
   return {
-    name: 'git',
     capabilities: { proxy: true, mirror: false },
 
     /** values: { http: http.proxy, https: https.proxy, ca: http.sslCAInfo } */
@@ -32,16 +31,31 @@ module.exports = (deps) => {
       return { ok: true, ...c, values: r.values }
     },
 
-    /** 写入代理配置并自动记录快照(原子化, 供 dss git on) */
+    /**
+     * 写入代理配置并自动记录快照(供 dss git on)。快照 = 实际写入值:
+     * 任一键失败时, 已成功写入的键并入快照段再返回错误, 不留"有配置无快照"半状态。
+     */
     async setProxy (entries) {
+      const written = {}
+      // 并入而非整段替换: 未尝试的键保留旧快照值(端口漂移候选集不丢)
+      const record = () => {
+        if (Object.keys(written).length === 0) return
+        const section = { ...((deps.snapshot.read().git) || {}), ...written }
+        deps.snapshot.updateTool('git', section)
+      }
       try {
         for (const [key, value] of Object.entries(entries)) {
           const r = await deps.run('git', ['config', '--global', key, value])
-          if (!r.ok) return { ok: false, error: `git config --global ${key} 失败: ${r.error || r.stderr}` }
+          if (!r.ok) {
+            record()
+            return { ok: false, error: `git config --global ${key} 失败: ${r.error || r.stderr}` }
+          }
+          written[key] = value
         }
-        deps.snapshot.updateTool('git', entries)
+        record()
         return { ok: true, written: Object.entries(entries) }
       } catch (e) {
+        record()
         return { ok: false, error: e.message }
       }
     },

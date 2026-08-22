@@ -42,8 +42,7 @@ test('switch: 企业源保护——原值是企业内网源时不被覆盖丢失
   await engine.switch('tuna')
   await engine.switch('aliyun')   // 重复切换
   const r = await engine.off()
-  assert.equal(r.target, CORP)    // 恢复到企业源原值
-  assert.equal(r.saved, CORP)
+  assert.equal(r.target, CORP)    // 恢复到企业源原值(target = 实际恢复到的源)
   assert.equal(snapshotState.mirror, undefined)  // 段清理
 })
 
@@ -74,7 +73,6 @@ test('off: 无快照 → 经 restoreDefault 回默认(npm=设官方源/pip=清�
   const r = await engine.off()
   assert.equal(r.ok, true)
   assert.equal(r.target, null)          // 无快照: target 为空, 由 adapter 决定回默认方式
-  assert.equal(r.saved, null)
   assert.deepEqual(setCalls, [`default:${OFFICIAL}`])  // 引擎只传官方值
 })
 
@@ -94,6 +92,23 @@ test('status: 当前值/快照/表内识别', async () => {
   assert.equal(r.current, MIRRORS.aliyun.url)
   assert.equal(r.saved, OFFICIAL)
   assert.equal(r.known, '阿里云')
+})
+
+test('switch/status: 尾部斜杠差异视为同一镜像(changed:false / known 识别)', async () => {
+  const { engine } = makeEngine({ current: `${MIRRORS.tuna.url}/` })
+  const r = await engine.switch('tuna')
+  assert.equal(r.changed, false)          // 不重复写入、不写快照
+  const st = await engine.status()
+  assert.equal(st.known, 'TUNA')          // 斜杠差异不落成"自定义"
+})
+
+test('status: 工具读失败 → readError 可见(区分 未设置/获取失败)', async () => {
+  const { engine, adapter } = makeEngine()
+  adapter.read = async () => ({ ok: false, error: '命令不可用', values: null })
+  const r = await engine.status()
+  assert.equal(r.current, null)
+  assert.equal(r.readError, '命令不可用')
+  assert.equal(r.known, null)
 })
 
 test('兼容历史快照键(registry/indexUrl)可被 off 读取恢复且段被清理', async () => {

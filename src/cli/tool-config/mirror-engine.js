@@ -7,6 +7,9 @@
 // 不拥有: 界面文案(返回结果对象, 中文提示/工具警示由命令层生成)
 const { readSnapshot, writeSnapshot } = require('../utils')
 
+// 尾部斜杠归一化: npm/pip 实际读回的源地址与表内 URL 常差一个尾斜杠
+const normUrl = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : u)
+
 function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
   const snap = snapshot || {
     read: readSnapshot,
@@ -52,7 +55,7 @@ function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
         return { ok: false, error: 'unknown-mirror', available: Object.keys(mirrors) }
       }
       const current = await readCurrent()
-      if (current === entry.url) {
+      if (current && normUrl(current) === normUrl(entry.url)) {
         return { ok: true, changed: false, current, entryName: entry.name, to: entry.url }
       }
       saveOriginalIfAbsent(current)
@@ -73,15 +76,21 @@ function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
         : await adapter.restoreDefault(official)
       if (!r.ok) return { ok: false, error: r.error }
       clearSaved()
-      return { ok: true, target: saved, saved }
+      // target: 实际恢复到的源; null = 无快照、经 restoreDefault 回默认
+      return { ok: true, target: saved }
     },
 
-    /** 当前状态: { ok, current, saved, known } — known 为当前值对应的表内镜像名(不在表内为 null) */
+    /**
+     * 当前状态: { ok, current, saved, known, readError }。
+     * known 为当前值对应的表内镜像名(尾部斜杠归一化比较, 不在表内为 null);
+     * readError 在工具命令不可用时携带错误(展示层据此区分"未设置"与"获取失败")。
+     */
     async status () {
-      const current = await readCurrent()
+      const r = await adapter.read()
+      const current = r.ok ? (r.values.mirror || null) : null
       const saved = readSaved()
-      const known = Object.entries(mirrors).find(([, m]) => m.url === current)
-      return { ok: true, current, saved, known: known ? known[1].name : null }
+      const known = current && Object.entries(mirrors).find(([, m]) => normUrl(m.url) === normUrl(current))
+      return { ok: true, current, saved, known: known ? known[1].name : null, readError: r.ok ? null : r.error }
     },
   }
 }

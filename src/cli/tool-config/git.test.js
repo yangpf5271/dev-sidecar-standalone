@@ -66,3 +66,26 @@ test('clean dryRun: 不执行 unset', async () => {
   assert.deepEqual(r.removed, ['git http.proxy'])
   assert.equal(run.calls.filter((c) => c.key.includes('--unset')).length, 0)
 })
+
+test('setProxy: 中途失败 → 已成功键并入快照段, 未尝试键不丢', async () => {
+  const run = fakeRun([
+    [/^git config --global http/, (_a, _b, key) => (key === 'https.proxy'
+      ? { ok: false, stdout: '', stderr: 'fatal: bad config' }
+      : { ok: true, stdout: '' })],
+  ])
+  const snap = fakeSnapshot({ git: { 'http.proxy': 'http://old.example:1' } })
+  const adapter = createGit({ run, homedir: () => '/tmp/x', snapshot: snap })
+  const r = await adapter.setProxy({ 'http.proxy': OURS, 'https.proxy': OURS })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /https\.proxy/)
+  assert.deepEqual(snap.state.git, { 'http.proxy': OURS })   // http.proxy 并入, 无其他旧键
+})
+
+test('setProxy: 全部成功 → 快照段记录全部键', async () => {
+  const run = fakeRun([[/^git config --global/, { ok: true, stdout: '' }]])
+  const snap = fakeSnapshot({})
+  const adapter = createGit({ run, homedir: () => '/tmp/x', snapshot: snap })
+  const r = await adapter.setProxy({ 'http.proxy': OURS })
+  assert.equal(r.ok, true)
+  assert.deepEqual(snap.state.git, { 'http.proxy': OURS })
+})

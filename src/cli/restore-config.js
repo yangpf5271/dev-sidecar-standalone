@@ -5,8 +5,8 @@
 // 本模块只剩编排: 遍历有代理能力的 adapter, 汇总清理结果与提示文案
 const { adapters } = require('./tool-config')
 
-/** 参与恢复的工具(按 capabilities.proxy 决定; pip 无代理能力, 显式 no-op 不参与) */
-const PROXY_TOOLS = ['npm', 'git', 'docker']
+/** 参与恢复的工具 = adapters 全集, 由 capabilities.proxy 能力位过滤(pip 无代理能力, 不参与) */
+const PROXY_TOOLS = Object.keys(adapters)
 
 /**
  * 检测配置中是否有指向本代理的残留（status 提示用，不做修改）

@@ -278,24 +278,16 @@ async function cmdOn (args) {
   }
 
   const noProxy = await collectNoProxy(extraNoProxy)
-  const file = adapters.docker.configPath()
-  const cfg = adapters.docker.readDoc()
-  if (!cfg.ok) {
-    console.error(`❌ ${file} 已损坏: ${cfg.error}`)
-    process.exit(1)
-  }
-  const data = cfg.data || {}
-  data.proxies = data.proxies || {}
-  data.proxies.default = {
+  const r = adapters.docker.setProxy({
     httpProxy: proxyUrl,
     httpsProxy: proxyUrl,
     noProxy: noProxy.join(','),
-  }
-  const w = adapters.docker.writeDoc(data)
-  if (!w.ok) {
-    console.error(`❌ ${w.error}`)
+  })
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
     process.exit(1)
   }
+  const file = adapters.docker.configPath()
 
   console.log(`✅ 构建层代理已注入: ${file}`)
   console.log(`   httpProxy / httpsProxy → ${proxyUrl}`)
@@ -307,24 +299,16 @@ async function cmdOn (args) {
 }
 
 async function cmdOff () {
-  const file = adapters.docker.configPath()
-  const cfg = adapters.docker.readDoc()
-  if (!cfg.ok) {
-    console.error(`❌ ${file} 已损坏: ${cfg.error}`)
+  const r = adapters.docker.clearProxy()
+  if (!r.ok) {
+    console.error(`❌ ${r.error}`)
     process.exit(1)
   }
-  if (!cfg.data || !cfg.data.proxies) {
+  if (!r.changed) {
     console.log('未配置构建层代理,无需移除')
     return
   }
-  delete cfg.data.proxies.default
-  if (Object.keys(cfg.data.proxies).length === 0) delete cfg.data.proxies
-  const w = adapters.docker.writeDoc(cfg.data)
-  if (!w.ok) {
-    console.error(`❌ ${w.error}`)
-    process.exit(1)
-  }
-  console.log(`✅ 构建层代理已移除(其余配置如 auths 原样保留): ${file}`)
+  console.log(`✅ 构建层代理已移除(其余配置如 auths 原样保留): ${adapters.docker.configPath()}`)
 }
 
 // ---------------------------------------------------------------------------

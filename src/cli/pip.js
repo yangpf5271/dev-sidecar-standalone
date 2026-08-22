@@ -3,7 +3,7 @@
 // 只提供 https 镜像（不引入 trusted-host，避免跳过证书校验的安全降级）。
 // 切换/恢复/快照保护由镜像引擎单点实现（tool-config/mirror-engine），
 // 命令层只保留表与文案。
-const { runCommand } = require('./utils')
+const { adapters } = require('./tool-config')
 const { createMirrorEngine } = require('./tool-config/mirror-engine')
 
 const PIP_OFFICIAL = 'https://pypi.org/simple/'
@@ -19,20 +19,11 @@ const mirrorEngine = createMirrorEngine({
   name: 'pip',
   official: PIP_OFFICIAL,
   mirrors: PIP_MIRRORS,
-  adapter: require('./tool-config').adapters.pip,
+  adapter: adapters.pip,
 })
 
-/** 探测可用的 pip 命令（pip / pip3），返回命令名或 null */
-async function detectPip () {
-  for (const cmd of ['pip', 'pip3']) {
-    const r = await runCommand(cmd, ['--version'])
-    if (r.ok) return cmd
-  }
-  return null
-}
-
 async function run (args) {
-  const pipCmd = await detectPip()
+  const pipCmd = await adapters.pip.detect()
   if (!pipCmd) {
     console.error('❌ 未检测到 pip / pip3 命令，请先安装 Python/pip')
     process.exit(1)
@@ -85,8 +76,8 @@ async function mirrorOff () {
     console.error(`❌ 恢复 pip 源失败: ${r.error}`)
     process.exit(1)
   }
-  if (r.saved) {
-    console.log(`✅ pip 源已恢复: ${r.saved}（来自切换前快照）`)
+  if (r.target) {
+    console.log(`✅ pip 源已恢复: ${r.target}（来自切换前快照）`)
   } else {
     console.log(`✅ pip 源已清除（将使用默认官方源 ${PIP_OFFICIAL}）`)
   }
@@ -126,4 +117,4 @@ function help () {
   console.log('  dss pip mirror off')
 }
 
-module.exports = { run, help, PIP_MIRRORS, PIP_OFFICIAL }
+module.exports = { run, help, PIP_MIRRORS, PIP_OFFICIAL, mirrorEngine }

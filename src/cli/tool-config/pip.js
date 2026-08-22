@@ -20,8 +20,10 @@ module.exports = (deps) => {
   }
 
   return {
-    name: 'pip',
     capabilities: { proxy: false, mirror: true },
+
+    /** 命令探测(pip/pip3) — 命令层经此复用, 探测知识单点 */
+    detect: detectPip,
 
     /** values: { http: global.proxy, mirror: global.index-url } */
     async read () {

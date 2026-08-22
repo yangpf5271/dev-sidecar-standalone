@@ -47,7 +47,6 @@ module.exports = (deps) => {
   }
 
   return {
-    name: 'docker',
     capabilities: { proxy: true, mirror: false },
 
     /** values: { http: httpProxy, https: httpsProxy }（来自 proxies.default） */
@@ -85,7 +84,28 @@ module.exports = (deps) => {
       return { ok: true, removed: [`docker proxies.default (${hit})`], notes: [] }
     },
 
-    // ---- 整文档原语(docker 命令层使用; auths 由命令层语义保证不动) ----
+    /** 注入构建层代理(on 语义): 写 proxies.default, 其余字段(auths 等)原样保留 */
+    setProxy ({ httpProxy, httpsProxy, noProxy }) {
+      const doc = readDoc()
+      if (!doc.ok) return doc
+      const data = doc.data || {}
+      data.proxies = data.proxies || {}
+      data.proxies.default = { httpProxy, httpsProxy, noProxy }
+      return writeDoc(data)
+    },
+
+    /** 移除构建层代理(off 语义): 无条件删除 proxies.default; 无配置时幂等(changed:false) */
+    clearProxy () {
+      const doc = readDoc()
+      if (!doc.ok) return doc
+      if (!doc.data || !doc.data.proxies || !doc.data.proxies.default) return { ok: true, changed: false }
+      delete doc.data.proxies.default
+      if (Object.keys(doc.data.proxies).length === 0) delete doc.data.proxies
+      const w = writeDoc(doc.data)
+      return w.ok ? { ok: true, changed: true } : w
+    },
+
+    // ---- 整文档原语(docker 命令层仍用于 noProxy 聚合等只读场景) ----
     readDoc,
     writeDoc,
     configPath: configFile,

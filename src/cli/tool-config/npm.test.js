@@ -86,7 +86,7 @@ test('clean dryRun: 只探测不写', async () => {
   assert.equal(run.calls.filter((c) => c.key.startsWith('npm config delete')).length, 0)
 })
 
-test('clean: 删除后仍生效(env/.npmrc 覆盖) → note + 快照段保留', async () => {
+test('clean: 删除后仍生效(env/.npmrc 覆盖) → note + 快照段保留 + 不入 removed', async () => {
   // delete 成功但 get 仍返回值(环境变量或项目级 .npmrc 覆盖场景)
   const run = fakeRun([
     [/^npm config get/, (_s, _g, key) => (key === 'proxy' ? { ok: true, stdout: OURS } : { ok: true, stdout: 'null' })],
@@ -95,9 +95,34 @@ test('clean: 删除后仍生效(env/.npmrc 覆盖) → note + 快照段保留', 
   const snap = fakeSnapshot({ npm: { proxy: OURS } })
   const adapter = createNpm({ run, homedir: () => '/tmp/x', snapshot: snap })
   const r = await adapter.clean(ADDR)
-  assert.deepEqual(r.removed, ['npm proxy'])
+  assert.deepEqual(r.removed, [])              // removed 只收已验证不再生效的项
   assert.match(r.notes[0], /仍生效/)
   assert.deepEqual(snap.cleared, [])   // 值仍在, 不清段
+})
+
+test('setProxy: 中途失败 → 已成功键并入快照段(实际写入值), 未尝试键不丢', async () => {
+  const run = fakeRun([
+    [/^npm config set/, (_s, _g, key) => (key === 'https-proxy'
+      ? { ok: false, stdout: '', stderr: 'boom' }
+      : { ok: true, stdout: '' })],
+  ])
+  const snap = fakeSnapshot({ npm: { cafile: 'C:\\old\\ca.crt' } })   // 上次 on --mitm 的残留记录
+  const adapter = createNpm({ run, homedir: () => '/tmp/x', snapshot: snap })
+  const r = await adapter.setProxy({ proxy: OURS, 'https-proxy': 'http://127.0.0.1:31181' })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /https-proxy/)
+  // 快照 = 实际写入值: proxy 已并入; 未尝试的 cafile 旧记录保留(候选集不丢)
+  assert.deepEqual(snap.state.npm, { cafile: 'C:\\old\\ca.crt', proxy: OURS })
+})
+
+test('setProxy: 全部成功 → 快照段记录全部键', async () => {
+  const run = fakeRun([[/^npm config set/, { ok: true, stdout: '' }]])
+  const snap = fakeSnapshot({})
+  const adapter = createNpm({ run, homedir: () => '/tmp/x', snapshot: snap })
+  const r = await adapter.setProxy({ proxy: OURS })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.written, [['proxy', OURS]])
+  assert.deepEqual(snap.state.npm, { proxy: OURS })
 })
 
 test('clean: npm 命令不可用 → 结果对象报错, 不 throw', async () => {
