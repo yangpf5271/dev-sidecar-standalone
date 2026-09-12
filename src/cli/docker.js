@@ -137,14 +137,22 @@ function readHostsLines () {
   }
 }
 
-/**
- * 批量更新 hosts:updates 为 Map<domain, ip|null>(null = 删除钉定)。
- * 只操作带 dss-mirror 标记的行,其余逐字保留;经临时文件 + sudo cp 写入。
- */
-async function applyHostsUpdates (updates) {
-  const lines = readHostsLines()
-  if (lines == null) return { ok: false, error: '无法读取 /etc/hosts' }
+/** 纯函数: hosts 行中带 dss-mirror 标记的钉定 → Map<domain, ip> */
+function parseHostsPins (lines) {
+  const pins = new Map()
+  for (const line of lines) {
+    if (!line.includes(`# ${HOSTS_MARKER}`)) continue
+    const parts = line.split(/\s+/)
+    if (parts.length >= 2) pins.set(parts[1], parts[0])
+  }
+  return pins
+}
 
+/**
+ * 纯函数: 按 updates(Map<domain, ip|null>) 重建 hosts 行。
+ * 只增删带 dss-mirror 标记的行,其余逐字保留;null = 只删不加。
+ */
+function buildHostsLines (lines, updates) {
   const domains = new Set(updates.keys())
   // 移除所有相关域名的旧钉定行
   const kept = lines.filter((line) => {
@@ -156,6 +164,18 @@ async function applyHostsUpdates (updates) {
   for (const [domain, ip] of updates) {
     if (ip) kept.push(`${ip} ${domain} # ${HOSTS_MARKER}`)
   }
+  return kept
+}
+
+/**
+ * 批量更新 hosts:updates 为 Map<domain, ip|null>(null = 删除钉定)。
+ * 只操作带 dss-mirror 标记的行,其余逐字保留;经临时文件 + sudo cp 写入。
+ */
+async function applyHostsUpdates (updates) {
+  const lines = readHostsLines()
+  if (lines == null) return { ok: false, error: '无法读取 /etc/hosts' }
+
+  const kept = buildHostsLines(lines, updates)
 
   const tmp = path.join(os.tmpdir(), `dss-hosts-${Date.now()}`)
   fs.writeFileSync(tmp, kept.join('\n'), 'utf8')
@@ -166,14 +186,7 @@ async function applyHostsUpdates (updates) {
 
 /** 读取当前钉定 Map<domain, ip> */
 function readHostsPins () {
-  const pins = new Map()
-  const lines = readHostsLines() || []
-  for (const line of lines) {
-    if (!line.includes(`# ${HOSTS_MARKER}`)) continue
-    const parts = line.split(/\s+/)
-    if (parts.length >= 2) pins.set(parts[1], parts[0])
-  }
-  return pins
+  return parseHostsPins(readHostsLines() || [])
 }
 
 // ---------------------------------------------------------------------------
@@ -311,22 +324,30 @@ function requireLinux (action) {
   }
 }
 
-function parseMirrorUrl (raw) {
+/** 纯函数: 解析镜像地址 → { ok, url, host, origin, pathBase } | { ok: false, reason } */
+function parseMirrorUrlPure (raw) {
   let url = raw.replace(/\/+$/, '')
   if (!/^https?:\/\//.test(url)) url = `https://${url}`
   try {
     const u = new URL(url)
     // Docker 的 ValidateMirror 拒绝含 query/fragment 的 mirror,写入会导致 daemon 拒绝启动
-    if (u.search || u.hash) {
-      console.error(`❌ 镜像地址不能包含查询参数或片段: ${raw}`)
-      console.error('   Docker daemon 会拒绝此类 mirror 地址(无法启动)')
-      process.exit(1)
-    }
-    return { url, host: u.hostname, origin: u.origin, pathBase: u.pathname.replace(/\/+$/, '') }
+    if (u.search || u.hash) return { ok: false, reason: 'query' }
+    return { ok: true, url, host: u.hostname, origin: u.origin, pathBase: u.pathname.replace(/\/+$/, '') }
   } catch {
-    console.error(`❌ 无效的镜像地址: ${raw}`)
-    process.exit(1)
+    return { ok: false, reason: 'invalid' }
   }
+}
+
+function parseMirrorUrl (raw) {
+  const r = parseMirrorUrlPure(raw)
+  if (r.ok) return r
+  if (r.reason === 'query') {
+    console.error(`❌ 镜像地址不能包含查询参数或片段: ${raw}`)
+    console.error('   Docker daemon 会拒绝此类 mirror 地址(无法启动)')
+  } else {
+    console.error(`❌ 无效的镜像地址: ${raw}`)
+  }
+  process.exit(1)
 }
 
 async function healthCheck (parsed) {
@@ -642,4 +663,10 @@ function help () {
   console.log('自建镜像站: 见 docs/worker-deploy.md(Cloudflare Worker 模板,谁使用谁部署)')
 }
 
-module.exports = { run, help }
+// 纯函数导出供单测(CIDR 数学/hosts 解析/镜像地址解析 — 均为踩过坑的高风险逻辑)
+module.exports = {
+  run, help,
+  parseCidr, ipToInt, isCloudflareIP,
+  parseHostsPins, buildHostsLines,
+  parseMirrorUrlPure,
+}
