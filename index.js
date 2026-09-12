@@ -56,6 +56,7 @@ const { route, printUnknownCommand } = require('./src/cli/router')
 })()
 
 function printHelp () {
+  const { DEFAULT_HOST, DEFAULT_MITM_PORT } = require('./src/cli/server-config')
   console.log('用法: dss [选项] 或 dss <子命令>')
   console.log('')
   console.log('选项:')
@@ -72,7 +73,7 @@ function printHelp () {
   console.log('  DEV_SIDECAR_HOME       覆盖数据目录 (CA证书存放位置)')
   console.log('')
   console.log('示例:')
-  console.log('  dss                               默认启动 (127.0.0.1:31181)')
+  console.log(`  dss                               默认启动 (${DEFAULT_HOST}:${DEFAULT_MITM_PORT})`)
   console.log('  dss -c ./config.json              使用自定义配置')
   console.log('  dss start / dss -d                后台守护进程')
   console.log('  dss stop                          停止并恢复代理配置')
@@ -84,40 +85,45 @@ function printHelp () {
 
 /**
  * 加载配置文件
+ * 配置读取/结构归一化/环境变量覆盖的单点知识在 src/cli/server-config.js
  */
 function loadConfig (configPath) {
+  const { readConfigJson, normalizeServer, withEnvOverride, serverOf } = require('./src/cli/server-config')
   let config
   if (configPath) {
-    let raw
-    try {
-      raw = fs.readFileSync(configPath, 'utf8')
-    } catch (e) {
-      console.error(`❌ 无法读取配置文件: ${configPath}`)
-      console.error(`   ${e.message}`)
+    const r = readConfigJson(configPath)
+    if (!r.ok) {
+      if (r.phase === 'read') {
+        console.error(`❌ 无法读取配置文件: ${configPath}`)
+      } else {
+        console.error(`❌ 配置文件不是有效的 JSON: ${configPath}`)
+      }
+      console.error(`   ${r.error}`)
       process.exit(1)
     }
-    try {
-      config = JSON.parse(raw)
-    } catch (e) {
-      console.error(`❌ 配置文件不是有效的 JSON: ${configPath}`)
-      console.error(`   ${e.message}`)
-      process.exit(1)
-    }
+    config = r.config
     log().info('已加载配置文件:', configPath)
   } else {
-    // 默认配置
-    config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config/default.json'), 'utf8'))
+    const r = readConfigJson(path.join(__dirname, 'config/default.json'))
+    if (!r.ok) {
+      console.error(`❌ 内置默认配置损坏: ${r.error}`)
+      process.exit(1)
+    }
+    config = r.config
     log().info('已加载默认配置')
   }
 
-  // 允许通过环境变量覆盖端口和主机
-  if (process.env.PORT) {
-    config.server.port = parseInt(process.env.PORT, 10)
-    log().info('环境变量 PORT 覆盖端口:', config.server.port)
+  // server 地址归一化(平铺提升/嵌套恒等), 环境变量覆盖经 server-config 单点 —
+  // 与命令侧 resolveProxyAddress 看到同一份地址
+  normalizeServer(config)
+  const addr = withEnvOverride(serverOf(config))
+  if (addr.port != null) {
+    if (addr.port !== config.server.port) log().info('环境变量 PORT 覆盖端口:', addr.port)
+    config.server.port = addr.port
   }
-  if (process.env.HOST) {
-    config.server.host = process.env.HOST
-    log().info('环境变量 HOST 覆盖监听地址:', config.server.host)
+  if (addr.host != null) {
+    if (addr.host !== config.server.host) log().info('环境变量 HOST 覆盖监听地址:', addr.host)
+    config.server.host = addr.host
   }
 
   // 设置用户基础路径（CA 证书存放位置）

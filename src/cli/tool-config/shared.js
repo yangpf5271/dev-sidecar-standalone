@@ -1,6 +1,7 @@
 // tool-config 共享语义 — classify(宽松)/isOurs 候选集(严格)/归一化
 // 独立成文件避免 index ↔ adapter 循环 require
 const path = require('node:path')
+const { DEFAULT_MITM_PORT } = require('../server-config')
 
 /**
  * 值归一化: npm 的未设置哨兵('null'/'undefined')与空串 → null
@@ -39,7 +40,8 @@ function classifyValues (values, addr) {
 function buildProxyCandidates (addr, snapshot) {
   const set = new Set()
   const hosts = new Set([addr.host, '127.0.0.1', 'localhost'])
-  const ports = new Set([addr.httpPort, addr.mitmPort, 31180, 31181])
+  // 默认端口兜底取单点(server-config); +1/-1 组合覆盖 http/mitm 双端口旧值
+  const ports = new Set([addr.httpPort, addr.mitmPort, DEFAULT_MITM_PORT - 1, DEFAULT_MITM_PORT])
   for (const p of ports) {
     for (const h of hosts) {
       set.add(`http://${h}:${p}`)
