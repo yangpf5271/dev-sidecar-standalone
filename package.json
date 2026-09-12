@@ -6,7 +6,6 @@
   "bin": {
     "dss": "index.js"
   },
-  "preferGlobal": true,
   "license": "MPL-2.0",
   "author": "yangpf5271",
   "keywords": [

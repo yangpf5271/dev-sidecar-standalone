@@ -2,13 +2,7 @@
 // dss npm mirror <name>|off|status — 切换/恢复/查看 npm 镜像源
 const { resolveProxyAddress, resolveCertPaths, warnIfProxyDown, makeConfigValueLabel } = require('./utils')
 const { adapters } = require('./tool-config')
-const { createMirrorEngine } = require('./tool-config/mirror-engine')
-
-const NPM_OFFICIAL = 'https://registry.npmjs.org'
-const NPM_MIRRORS = {
-  npmmirror: { name: 'npmmirror（淘宝）', url: 'https://registry.npmmirror.com' },
-  ustc: { name: '中国科学技术大学', url: 'https://npmreg.proxy.ustclug.org' },
-}
+const { NPM_MIRRORS, NPM_OFFICIAL, npmMirrorEngine: mirrorEngine } = require('./tool-config/mirror-registry')
 
 async function run (args) {
   const action = args[0]
@@ -104,7 +98,8 @@ function help () {
 }
 
 // ---------------------------------------------------------------------------
-// 镜像源切换（引擎驱动：快照保护/恢复/清理单点实现，命令层只保留表与文案）
+// 镜像源切换（引擎驱动: 引擎与镜像表下沉在 tool-config/mirror-registry，
+// 命令层只保留文案; 快照保护/恢复/清理由引擎单点实现）
 // ---------------------------------------------------------------------------
 
 /** 冲突提示：镜像国内直连可达，配合代理使用是双重跳转 */
@@ -116,13 +111,6 @@ async function warnProxyConflict () {
     console.log('   同时使用会双重跳转反而可能变慢，建议 dss npm off 后仅用镜像')
   }
 }
-
-const mirrorEngine = createMirrorEngine({
-  name: 'npm',
-  official: NPM_OFFICIAL,
-  mirrors: NPM_MIRRORS,
-  adapter: adapters.npm,
-})
 
 async function mirror (args) {
   const action = args[0]
@@ -176,4 +164,4 @@ async function mirrorStatus () {
   console.log(`  ${'npm'.padEnd(12)} 官方源  ${NPM_OFFICIAL}（off 未有快照时恢复到它）`)
 }
 
-module.exports = { run, help, NPM_MIRRORS, NPM_OFFICIAL, mirrorEngine }
+module.exports = { run, help }

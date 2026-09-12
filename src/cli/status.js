@@ -11,8 +11,8 @@ const {
   verifyProcessIdentity,
 } = require('./utils')
 const { adapters } = require('./tool-config')
-const { NPM_OFFICIAL, mirrorEngine: npmMirrorEngine } = require('./npm')
-const { PIP_OFFICIAL, mirrorEngine: pipMirrorEngine } = require('./pip')
+const { NPM_OFFICIAL, npmMirrorEngine, PIP_OFFICIAL, pipMirrorEngine } = require('./tool-config/mirror-registry')
+const { normUrl } = require('./tool-config/mirror-engine')
 const pull = require('./docker-pull')
 const { detectResidue } = require('./restore-config')
 
@@ -132,7 +132,6 @@ function proxyBadge (r) {
 
 /** 镜像源显示（数据来自镜像引擎 status，与 dss npm/pip mirror 同源）：
  *  官方 → 默认；表内 → 名称(+dss 标记)；其他 → 原样(企业源等)；读失败 → 获取失败 */
-const normUrl = (u) => u.replace(/\/+$/, '')
 function mirrorLabel (st, official) {
   if (!st.current) return st.readError ? '获取失败' : '(未设置)'
   if (normUrl(st.current) === normUrl(official)) return '默认'

@@ -1,5 +1,4 @@
-// CLI 子命令分发入口
-// 注意：此模块在 index.js 顶部被调用，早于 daemon/help/main 逻辑，
+// CLI 子命令分发入口 — 由 index.js 的 route 决策(subcommand)延迟 require
 // 只能依赖轻量模块，不能 require src/mitmproxy（避免副作用）
 const SUBCOMMANDS = {
   start: () => require('./start'),

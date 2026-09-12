@@ -1,26 +1,10 @@
 // dss pip mirror <name>|off|status — 切换/恢复/查看 pip 镜像源
 //
 // 只提供 https 镜像（不引入 trusted-host，避免跳过证书校验的安全降级）。
-// 切换/恢复/快照保护由镜像引擎单点实现（tool-config/mirror-engine），
-// 命令层只保留表与文案。
+// 切换/恢复/快照保护由镜像引擎单点实现；引擎与镜像表下沉在
+// tool-config/mirror-registry，命令层只保留文案。
 const { adapters } = require('./tool-config')
-const { createMirrorEngine } = require('./tool-config/mirror-engine')
-
-const PIP_OFFICIAL = 'https://pypi.org/simple/'
-const PIP_MIRRORS = {
-  tsinghua: { name: '清华大学', url: 'https://pypi.tuna.tsinghua.edu.cn/simple' },
-  aliyun: { name: '阿里云', url: 'https://mirrors.aliyun.com/pypi/simple/' },
-  ustc: { name: '中国科学技术大学', url: 'https://pypi.mirrors.ustc.edu.cn/simple' },
-  nju: { name: '南京大学', url: 'https://mirror.nju.edu.cn/pypi/web/simple/' },
-}
-
-// pip adapter 持有命令探测/读写知识; 引擎经 require 工厂注入默认实例
-const mirrorEngine = createMirrorEngine({
-  name: 'pip',
-  official: PIP_OFFICIAL,
-  mirrors: PIP_MIRRORS,
-  adapter: adapters.pip,
-})
+const { PIP_MIRRORS, PIP_OFFICIAL, pipMirrorEngine: mirrorEngine } = require('./tool-config/mirror-registry')
 
 async function run (args) {
   const pipCmd = await adapters.pip.detect()
@@ -117,4 +101,4 @@ function help () {
   console.log('  dss pip mirror off')
 }
 
-module.exports = { run, help, PIP_MIRRORS, PIP_OFFICIAL, mirrorEngine }
+module.exports = { run, help }

@@ -16,7 +16,6 @@
 // 快照文件机械存取保留在 utils(共享存储), mirror 段留给镜像引擎
 const os = require('node:os')
 const { runCommand, readSnapshot, updateSnapshot, clearSnapshotSection } = require('../utils')
-const shared = require('./shared')
 
 /**
  * 工厂: 注入面仅限三项 — run(命令执行器)/homedir/snapshot。
@@ -46,6 +45,4 @@ const adapters = createAdapters()
 module.exports = {
   createAdapters,
   adapters,
-  // 共享语义(纯函数, 单测对象)
-  ...shared,
 }

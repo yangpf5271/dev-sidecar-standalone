@@ -95,4 +95,4 @@ function createMirrorEngine ({ name, official, mirrors, adapter, snapshot }) {
   }
 }
 
-module.exports = { createMirrorEngine }
+module.exports = { createMirrorEngine, normUrl }
