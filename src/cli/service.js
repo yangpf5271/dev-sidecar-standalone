@@ -105,6 +105,9 @@ async function installCmd (args) {
   }
   console.log(`   验证: ✅ 定义存在, 代理端口 ${ctx.addr.host}:${ctx.addr.httpPort} 已就绪`)
   console.log('   卸载: dss service uninstall   状态: dss service status')
+  if (r.warning) {
+    console.log(`   ⚠️  ${r.warning}`)
+  }
   if (ctx.devSidecarHome || ctx.configPath || ctx.startEnv.PORT || ctx.startEnv.HOST) {
     console.log('   ℹ️  已固化启动配置(DEV_SIDECAR_HOME/PORT/HOST/-c)；之后修改需重新 install')
   }
@@ -118,6 +121,13 @@ async function uninstallCmd (args) {
   }
   console.log('正在移除服务定义并停止受管代理...')
   const r = await ops.removeDefinition()
+  if (!r.ok) {
+    // 定义仍在管: 不打"已移除"、不停代理(管理器会立刻拉回, 停了也是假象) —— 判定书 #21③
+    for (const n of r.notes) console.error(`   (${n})`)
+    console.error('❌ 服务定义移除未完成，未停止代理(避免"已移除"与代理复活同屏的假象)')
+    console.error('   修复权限后重试: dss service uninstall')
+    process.exit(1)
+  }
   for (const n of r.notes) console.log(`   (${n})`)
   // 停受管代理进程(身份验证防误杀; 服务定义已移除, 管理器不会再拉回)
   await stopDaemon(args)

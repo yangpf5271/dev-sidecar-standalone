@@ -90,8 +90,8 @@ test('win32 installDefinition: reg add 失败 → ok:false 且错误可读', asy
   assert.ok(r.error.includes('Access is denied'))
 })
 
-test('win32 uninstall: reg delete → 删 vbs', async () => {
-  const { ops, calls, ffs } = winOps({ disk: { [VBS]: 'fake' } })
+test('win32 uninstall: reg delete → 删 vbs(移除后 query 失败=键已不存在)', async () => {
+  const { ops, calls, ffs } = winOps({ disk: { [VBS]: 'fake' }, routes: [[/reg query/, { ok: false, stderr: 'unable to find' }]] })
   const r = await ops.removeDefinition()
   assert.equal(r.ok, true)
   assert.ok(calls.some((c) => c.includes('reg delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v dss-autostart /f')))
@@ -220,6 +220,100 @@ test('replayDrifts: 数据目录漂移 / 入口失效 / 无快照跳过', () => 
   assert.ok(drift3[0].includes('入口失效'))
 })
 
+// ---------------------------------------------------------------------------
+// P0 修复回归 — 议会判定书 c-20261006-121045-i1z4 四项
+// ---------------------------------------------------------------------------
+
+test('P0-1 manifest 写失败: 降级为成功+警告, 不再报假失败', async () => {
+  const manifestPath = path.join(CTX.userBasePath, 'dss-service.json')
+  const { ops, ffs } = winOps({ disk: {} })
+  // 模拟: manifest 目录不可写(vbs 可写) —— 用 writeFile 注入对 manifest 路径抛错
+  const ops2 = createServiceOps({
+    platform: 'win32',
+    runCommand: recordingFakeRun().run,
+    existsFile: ffs.existsFile,
+    writeFile: (p, c, o) => {
+      if (p.endsWith('dss-service.json')) throw new Error('EACCES: readonly')
+      ffs.writeFile(p, c, o)
+    },
+    unlinkFile: ffs.unlinkFile,
+    probePort: async () => true,
+    userBasePath: CTX.userBasePath,
+    isWSL: () => false,
+  })
+  const r = await ops2.installDefinition(CTX)
+  assert.equal(r.ok, true, '定义已注册且验证通过, manifest 失败不得报假失败')
+  assert.ok(r.warning && r.warning.includes('安装快照写入失败'), '必须以警告显式声明漂移检测不可用')
+  assert.equal(ffs.disk.has(manifestPath), false)
+  void ops
+})
+
+test('P0-2 removeDefinition: reg delete 失败且键仍在 → ok:false 真实报告', async () => {
+  const { ops } = winOps({ routes: [[/reg delete/, { ok: false, stderr: 'denied' }], [/reg query/, { ok: true }]] })
+  const r = await ops.removeDefinition()
+  assert.equal(r.ok, false, '键仍在管时必须真实报告失败')
+  assert.ok(r.notes.some((n) => n.includes('仍在管')))
+})
+
+test('P0-2 removeDefinition: 未安装时(键本不存在, query 也失败) → ok:true 幂等', async () => {
+  const { ops } = winOps({ routes: [[/reg delete/, { ok: false, stderr: 'unable to find' }], [/reg query/, { ok: false }]] })
+  const r = await ops.removeDefinition()
+  assert.equal(r.ok, true)
+})
+
+test('P0-3 isWSL fail-closed: 环境变量快路径命中 → true(正路)', () => {
+  const ops = createServiceOps({
+    platform: 'win32',
+    runCommand: recordingFakeRun().run,
+    userBasePath: CTX.userBasePath,
+    spawnSyncOverride: undefined,
+  })
+  // spawnSync 不在注入面 — 通过 delete 注入不可行, 改为直接验证模块行为:
+  // 用 deps 注入不存在(默认 spawnSync), 无法模拟 PS 失败; 该路径由父链实现内测。
+  // 这里验证: 环境变量命中时(fail-open 的正路)仍正常返回 true
+  process.env.WSL_DISTRO_NAME = 'Ubuntu'
+  try {
+    assert.equal(ops.isWSL(), true)
+  } finally {
+    delete process.env.WSL_DISTRO_NAME
+  }
+})
+
+test('P0-4 覆盖安装失败: 回滚至装前状态(旧 vbs 内容恢复, 新文件被清理)', async () => {
+  const OLD_VBS = 'old vbs content'
+  const { ops, ffs, calls } = winOps({
+    disk: { [VBS]: OLD_VBS }, // 装前已有旧定义(vbs 在)
+    routes: [[/reg add/, { ok: false, stderr: 'denied' }]], // 新装注册失败
+  })
+  // readFile 走 fake 磁盘(safeRead 需要与 existsFile 同一存储域)
+  const ops2 = createServiceOps({
+    platform: 'win32',
+    runCommand: recordingFakeRun([[/reg add/, { ok: false, stderr: 'denied' }]]).run,
+    existsFile: ffs.existsFile,
+    writeFile: ffs.writeFile,
+    unlinkFile: ffs.unlinkFile,
+    readFile: (p) => {
+      if (!ffs.disk.has(p)) throw new Error('ENOENT')
+      return ffs.disk.get(p)
+    },
+    probePort: async () => true,
+    userBasePath: CTX.userBasePath,
+    isWSL: () => false,
+  })
+  void ops; void calls
+  const r = await ops2.installDefinition(CTX)
+  assert.equal(r.ok, false)
+  // 回滚基线=装前状态: 旧 vbs 内容被恢复(而非删除)
+  assert.equal(ffs.disk.get(VBS), OLD_VBS, '覆盖失败应恢复旧定义内容')
+})
+
+test('P0-4 首次安装失败: 无旧快照 → 清理本次文件(原回滚语义)', async () => {
+  const { ops, ffs } = winOps({ routes: [[/reg add/, { ok: false, stderr: 'denied' }]] })
+  const r = await ops.installDefinition(CTX)
+  assert.equal(r.ok, false)
+  assert.equal(ffs.disk.has(VBS), false)
+})
+
 test('managerStopHint: 按平台给出管理器通道命令', () => {
   const w = createServiceOps({ platform: 'win32', runCommand: recordingFakeRun().run, userBasePath: CTX.userBasePath })
   assert.ok(w.managerStopHint().includes('dss stop'))
@@ -259,7 +353,7 @@ test('linux uninstall: disable --now → sudo rm → daemon-reload', async () =>
   const ops = createServiceOps({
     platform: 'linux',
     runCommand: run,
-    existsFile: () => true,
+    existsFile: (p) => p === '/etc/systemd/system/dss.service' && !removed.includes(p), // rm 后视为已移除
     userBasePath: '/home/yangpf/.dev-sidecar',
     sudoRemove: async (targets) => { removed.push(...targets); return { ok: true } },
   })

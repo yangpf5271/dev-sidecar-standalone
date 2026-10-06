@@ -53,9 +53,12 @@ function createServiceOps (deps = {}) {
       '};',
       'Write-Output NO',
     ].join(' ')
-    // 必须 spawnSync: 本判定被同步调用, 异步 spawn 会在结果就绪前返回 undefined
-    const r = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
-    interopMemo = !r.error && r.status === 0 && /WSL/.test(r.stdout || '')
+    // 必须 spawnSync: 本判定被同步调用, 异步 spawn 会在结果就绪前返回 undefined。
+    // fail-closed(判定书 #18/#24): 检测机制失灵(PS 缺失/CIM 受限/超时)时按「疑似 WSL」处理 ——
+    // 误拒一个原生 Windows 用户(提示换终端, 可重试)远好于在 WSL 里装出不可用的登录项
+    const r = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 10000 })
+    const detected = !r.error && r.status === 0 && /WSL/.test(r.stdout || '')
+    interopMemo = detected || !!r.error || r.status !== 0
     return interopMemo
   }
   const isWSL = deps.isWSL || (() => {
@@ -104,28 +107,49 @@ function createServiceOps (deps = {}) {
     return `launchctl unload -w "${paths.plist}"`
   }
 
-  /** 移除服务定义与辅助文件(幂等; 不存在时各动作自然失败但整体 ok) */
+  /** 移除服务定义与辅助文件。
+   *  返回真实结果(ok=false = 定义仍可能在管), 假成功在此被阻断 —— 调用方(uninstall)据此
+   *  不打"已移除"、不做后续停止动作, 避免"✅ 已移除 + 代理复活"同屏 (判定书 #10/#21③) */
   async function removeDefinition () {
     const notes = []
+    let ok = true
     if (platform === 'win32') {
       const del = await run('reg', ['delete', RUN_KEY_PATH, '/v', SERVICE_VALUE_NAME, '/f'])
-      if (!del.ok) notes.push('Run 键已不存在(跳过)')
+      if (!del.ok) {
+        notes.push('Run 键已不存在(跳过)') // 唯一可接受的失败: 本就没装
+      }
       try { unlinkFile(paths.vbs) } catch { /* 已不存在 */ }
+      // 以探测复核移除结果(不信任命令退出码的"已不存在"歧义)
+      if (await detectSupervisor()) {
+        ok = false
+        notes.push(`Run 键移除失败, 登录项仍在管(请检查权限后重试)`)
+      }
     } else if (platform === 'linux') {
       await run('sudo', ['systemctl', 'disable', '--now', SERVICE_UNIT_NAME])
       const rm = await sudoRemove([paths.unit, paths.wrapper])
-      if (!rm.ok) notes.push(`移除 unit/wrapper 失败: ${rm.error}`)
+      if (!rm.ok) {
+        ok = false
+        notes.push(`移除 unit/wrapper 失败: ${rm.error || 'sudo rm 未成功'}`)
+      }
       await run('sudo', ['systemctl', 'daemon-reload'])
+      if (await detectSupervisor()) {
+        ok = false
+        notes.push('unit 文件仍在, 服务定义仍在管(请检查权限后重试)')
+      }
     } else {
       await run('launchctl', ['unload', '-w', paths.plist])
       try { unlinkFile(paths.plist) } catch { /* 已不存在 */ }
       try { unlinkFile(paths.wrapper) } catch { /* 已不存在 */ }
+      if (await detectSupervisor()) {
+        ok = false
+        notes.push('plist 仍在, 服务定义仍在管(请检查权限后重试)')
+      }
     }
     try { unlinkFile(manifestPath) } catch { /* 已不存在 */ }
-    return { ok: true, notes }
+    return { ok, notes }
   }
 
-  /** 回滚已就位的定义文件(设计 D7: 失败不留半成品) */
+  /** 回滚本次已就位的定义文件(D7 基础件) */
   async function rollback (placed) {
     const direct = placed.filter((p) => !p.sudo).map((p) => p.dst)
     for (const p of direct) {
@@ -135,8 +159,53 @@ function createServiceOps (deps = {}) {
     if (sudoed.length > 0) await sudoRemove(sudoed)
   }
 
+  function safeRead (p) {
+    if (deps.readFile) {
+      try { return deps.readFile(p, 'utf8') } catch { return null }
+    }
+    try { return fs.readFileSync(p, 'utf8') } catch { return null }
+  }
+
+  /** 是否 sudo 管辖路径(Linux 系统路径; 由平台判断而非字符串猜测) */
+  function isSudoPath (p) {
+    return platform === 'linux' && (p === paths.unit || p === paths.wrapper)
+  }
+
   /**
-   * installDefinition: 覆盖旧定义 → 写定义文件(失败回滚) → 平台注册 → 写安装解析快照。
+   * 覆盖安装失败的双模恢复(判定书 #21④): 有旧定义快照 → 以快照为主遍历恢复装前状态
+   * (旧定义在 removeDefinition 时已被删, 必须从快照复原); 无快照(首次安装) → 清掉本次已就位。
+   * registry 条目例外: 无法内容级恢复, 旧条目数据与新版同构(同名同入口链),
+   * 留存新条目即为最接近装前的可用状态。
+   */
+  async function restoreOrRollback (oldSnapshot, placed) {
+    const registryPlaced = placed.filter((p) => p.registry)
+    if (oldSnapshot.length > 0) {
+      for (const o of oldSnapshot) {
+        if (o.content == null) continue
+        if (o.sudo) {
+          const tmp = jp.join(os.tmpdir(), `dss-svc-rb-${Date.now()}-${jp.basename(o.dst)}`)
+          try {
+            writeFile(tmp, o.content)
+            await sudoCopy(tmp, o.dst)
+            try { unlinkFile(tmp) } catch { /* 忽略 */ }
+          } catch { /* 恢复失败: 至少新文件仍完整就位 */ }
+        } else {
+          try { writeFile(o.dst, o.content) } catch { /* 同上 */ }
+        }
+      }
+      // 快照之外本次新放置的文件(装前不存在的)清理掉
+      for (const f of placed.filter((p) => !p.registry && !oldSnapshot.some((o) => o.dst === p.dst))) {
+        try { unlinkFile(f.dst) } catch { /* 已不存在 */ }
+      }
+    } else {
+      await rollback(placed.filter((p) => !p.registry))
+    }
+    void registryPlaced
+  }
+
+  /**
+   * installDefinition: 覆盖旧定义(旧定义先快照, 新装失败恢复装前状态) → 写定义文件(失败回滚)
+   * → 平台注册 → 写安装解析快照(失败降级为成功+警告, 不报假失败)。
    * 只做注册, 不负责拉起代理 —— 立即拉起由命令壳层走 startDaemon(Windows, node 直 spawn)
    * 或由 enable --now / launchctl load(Linux/macOS 注册动作自带拉起)。
    * ctx: { user, userBasePath, devSidecarHome, npmPrefix, startEnv, configPath, addr }
@@ -151,7 +220,15 @@ function createServiceOps (deps = {}) {
     }
 
     const wasInstalled = await detectSupervisor()
-    if (wasInstalled) await removeDefinition()
+    // 覆盖安装基线: 先快照旧定义文件, 新装任一步失败时回滚至「装前状态」而非仅清本次已就位
+    // (否则覆盖失败会让用户从"有自启"变"无自启"且报错只字不提 —— 判定书 #21④)
+    let oldSnapshot = []
+    if (wasInstalled) {
+      for (const p of Object.values(paths)) {
+        if (existsFile(p)) oldSnapshot.push({ dst: p, content: safeRead(p), sudo: isSudoPath(p) })
+      }
+      await removeDefinition()
+    }
 
     const def = createServiceDefinition(platform, ctx)
 
@@ -163,13 +240,13 @@ function createServiceOps (deps = {}) {
         try {
           writeFile(tmp, f.content, { mode: f.mode })
         } catch (e) {
-          await rollback(placed)
+          await restoreOrRollback(oldSnapshot, placed)
           return { ok: false, error: `写入临时文件失败: ${e.message}` }
         }
         const cp = await sudoCopy(tmp, f.absPath)
         try { unlinkFile(tmp) } catch { /* 忽略 */ }
         if (!cp.ok) {
-          await rollback(placed)
+          await restoreOrRollback(oldSnapshot, placed)
           return { ok: false, error: `写入 ${f.absPath} 失败(需要 sudo): ${cp.error || 'sudo 复制未成功'}` }
         }
         placed.push({ dst: f.absPath, sudo: true })
@@ -178,7 +255,7 @@ function createServiceOps (deps = {}) {
           fs.mkdirSync(jp.dirname(f.absPath), { recursive: true })
           writeFile(f.absPath, f.content, { mode: f.mode })
         } catch (e) {
-          await rollback(placed)
+          await restoreOrRollback(oldSnapshot, placed)
           return { ok: false, error: `写入 ${f.absPath} 失败: ${e.message}` }
         }
         placed.push({ dst: f.absPath, sudo: false })
@@ -192,37 +269,39 @@ function createServiceOps (deps = {}) {
         'add', RUN_KEY_PATH, '/v', SERVICE_VALUE_NAME, '/t', 'REG_SZ', '/d', def.definition.data, '/f',
       ])
       if (!add.ok) {
-        await rollback(placed)
+        await restoreOrRollback(oldSnapshot, placed)
         return { ok: false, error: `注册 HKCU Run 登录项失败: ${add.stderr || add.error}` }
       }
       placed.push({ dst: RUN_KEY_PATH, sudo: false, registry: true })
     } else if (platform === 'linux') {
       const reload = await run('sudo', ['systemctl', 'daemon-reload'])
       if (!reload.ok) {
-        await rollback(placed)
+        await restoreOrRollback(oldSnapshot, placed)
         return { ok: false, error: `systemctl daemon-reload 失败: ${reload.stderr || reload.error}` }
       }
       const enable = await run('sudo', ['systemctl', 'enable', '--now', SERVICE_UNIT_NAME])
       if (!enable.ok) {
-        await rollback(placed)
+        await restoreOrRollback(oldSnapshot, placed)
         return { ok: false, error: `systemctl enable --now 失败: ${enable.stderr || enable.error}` }
       }
     } else {
       await run('launchctl', ['unload', '-w', paths.plist]) // 旧定义残留时先卸载, 未加载则失败属正常
       const load = await run('launchctl', ['load', '-w', paths.plist])
       if (!load.ok) {
-        await rollback(placed)
+        await restoreOrRollback(oldSnapshot, placed)
         return { ok: false, error: `launchctl load 失败: ${load.stderr || load.error}` }
       }
     }
 
     const defExists = await detectSupervisor()
     if (!defExists) {
-      await rollback(placed.filter((p) => !p.registry))
+      await restoreOrRollback(oldSnapshot, placed.filter((p) => !p.registry))
       return { ok: false, error: '安装后验证失败: 服务定义不存在' }
     }
 
-    // 安装解析快照(不变式③: status 重放比对的基准)
+    // 安装解析快照(不变式③: status 重放比对的基准)。
+    // 写失败不构成假失败(定义已注册且 Linux/macOS 已拉起) —— 重试一次后降级为成功+警告:
+    // 缺快照只损失漂移检测(status 重放静默跳过), 定义与代理本身完好 (判定书 #21①/#15/#17)
     const manifest = {
       platform,
       name: def.name,
@@ -235,13 +314,18 @@ function createServiceOps (deps = {}) {
       httpPort: ctx.addr.httpPort,
       installedVersion: cliVersion,
     }
+    let manifestWarning = null
     try {
       fs.mkdirSync(jp.dirname(manifestPath), { recursive: true })
       writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
-    } catch (e) {
-      return { ok: false, error: `写入安装快照失败: ${e.message}`, installed: true }
+    } catch (e1) {
+      try {
+        writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
+      } catch (e2) {
+        manifestWarning = `安装快照写入失败(${e2.message})，漂移检测不可用(dss service status 不会做数据目录/入口比对)；可重跑 dss service install 重建快照`
+      }
     }
-    return { ok: true, installed: true, wasInstalled, definition: def, manifest }
+    return { ok: true, installed: true, wasInstalled, definition: def, manifest, warning: manifestWarning }
   }
 
   /** 读取安装解析快照(无则 null —— 旧版本安装未产生快照, 重放跳过) */
