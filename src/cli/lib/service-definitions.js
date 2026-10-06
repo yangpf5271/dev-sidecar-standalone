@@ -174,7 +174,7 @@ function createLinuxDefinition (ctx) {
     kind: 'systemd',
     name: SERVICE_UNIT_NAME,
     auxFiles: [
-      { absPath: paths.wrapper, content: createWrapperContent('linux', ctx), sudo: true },
+      { absPath: paths.wrapper, content: createWrapperContent('linux', ctx), sudo: true, mode: 0o755 },
       { absPath: paths.unit, content: unit, sudo: true },
     ],
     definition: {
@@ -237,7 +237,7 @@ ${envDict}
     kind: 'launchd',
     name: SERVICE_LABEL,
     auxFiles: [
-      { absPath: paths.wrapper, content: createWrapperContent('darwin', ctx) },
+      { absPath: paths.wrapper, content: createWrapperContent('darwin', ctx), mode: 0o755 },
       { absPath: paths.plist, content: plist },
     ],
     definition: {

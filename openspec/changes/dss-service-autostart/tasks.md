@@ -16,7 +16,7 @@
 
 ## 4. Linux / macOS 形态接入
 
-- [x] 4.1 Linux 编排分支（sudo 原子就位、失败回滚不留半成品、systemctl 判定不依赖本地化文本）；单测覆盖编排分支与生成器对接；验证：`npm test` 全绿；有 sudo 的 Linux 真机 install→status→uninstall 走通【待验证——本机无 Linux sudo 环境，CI Linux 跑单测】
+- [x] 4.1 Linux 编排分支（sudo 原子就位、失败回滚不留半成品、systemctl 判定不依赖本地化文本）；单测覆盖编排分支与生成器对接；验证：`npm test` 全绿 + WSL Ubuntu 24.04 (systemd) 真机 install→status→uninstall 走通（wrapper 权限 755、User=、真实代理请求 200 均已核验）
 - [x] 4.2 macOS launchd 分支：生成器对接与编排单测照常，命令运行时输出"未实测"标注；验证：`npm test` 全绿（真实加载明确不在验证范围）
 
 ## 5. 监管器协作与面板集成

@@ -4,7 +4,7 @@
 // 禁止: 在本层 spawn wscript(WSH 会因安装 shell 的畸形环境块弹出"内存资源不足"对话框)
 const fs = require('node:fs')
 const os = require('node:os')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const {
   createServiceDefinition,
   servicePaths,
@@ -26,16 +26,40 @@ function createServiceOps (deps = {}) {
   const run = deps.runCommand || runCommand
   const probe = deps.probePort || probePort
   const existsFile = deps.existsFile || ((p) => fs.existsSync(p))
-  const writeFile = deps.writeFile || ((p, c) => fs.writeFileSync(p, c, 'utf8'))
+  const writeFile = deps.writeFile || ((p, c, opts) => fs.writeFileSync(p, c, { encoding: 'utf8', ...opts }))
   const unlinkFile = deps.unlinkFile || ((p) => fs.unlinkSync(p))
   const platform = deps.platform || process.platform
   const cliVersion = deps.cliVersion || require('../../../package.json').version
   const userBasePath = deps.userBasePath || resolveCertPaths().userBasePath
   const readPid = deps.readPidInfo || readPidInfo
-  // WSL 判定(设计 D9 双重特征): win32 互操作进程带 WSL_DISTRO_NAME / WSL_INTEROP;
-  // linux 平台则看内核标识(microsoft)。仅 win32 侧用于硬拒绝(linux 原生属 Linux 流程)
-  const isWSL = deps.isWSL || (() => {
+  // WSL 判定(设计 D9): 环境变量在互操作场景不可靠(WSL 默认不传 Linux env 给 Windows 进程,
+  // 实测 WSL_DISTRO_NAME 为 undefined), 因此 win32 采用「父进程链回溯」——互操作启动的进程
+  // 其 Windows 父链上必有 wsl.exe。linux 平台以内核标识(microsoft)判定, 仅用于诊断提示。
+  const envWslSignal = () => {
     if (platform === 'win32') return !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+    return /microsoft/i.test(os.release())
+  }
+  let interopMemo // 进程生命周期内不变, 判定一次后缓存
+  const parentChainWsl = () => {
+    if (interopMemo !== undefined) return interopMemo
+    const script = [
+      `$p=${process.pid};`,
+      'for($i=0;$i -lt 10;$i++){',
+      '  $proc=Get-CimInstance Win32_Process -Filter "ProcessId=$p" -ErrorAction SilentlyContinue;',
+      '  if(-not $proc){break};',
+      '  if($proc.Name -match "^(wsl|wslhost|wslservice)\\.exe$"){Write-Output WSL;exit};',
+      '  $p=$proc.ParentProcessId;',
+      '  if(-not $p){break};',
+      '};',
+      'Write-Output NO',
+    ].join(' ')
+    // 必须 spawnSync: 本判定被同步调用, 异步 spawn 会在结果就绪前返回 undefined
+    const r = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
+    interopMemo = !r.error && r.status === 0 && /WSL/.test(r.stdout || '')
+    return interopMemo
+  }
+  const isWSL = deps.isWSL || (() => {
+    if (platform === 'win32') return envWslSignal() || parentChainWsl()
     return /microsoft/i.test(os.release())
   })
   // sudo 写/删: 需要终端交互密码, stdio inherit(不能走管道); 测试可注入
@@ -137,13 +161,13 @@ function createServiceOps (deps = {}) {
       if (f.sudo) {
         const tmp = jp.join(os.tmpdir(), `dss-svc-${Date.now()}-${jp.basename(f.absPath)}`)
         try {
-          writeFile(tmp, f.content)
+          writeFile(tmp, f.content, { mode: f.mode })
         } catch (e) {
           await rollback(placed)
           return { ok: false, error: `写入临时文件失败: ${e.message}` }
         }
-        try { unlinkFile(tmp) } catch { /* 忽略 */ }
         const cp = await sudoCopy(tmp, f.absPath)
+        try { unlinkFile(tmp) } catch { /* 忽略 */ }
         if (!cp.ok) {
           await rollback(placed)
           return { ok: false, error: `写入 ${f.absPath} 失败(需要 sudo): ${cp.error || 'sudo 复制未成功'}` }
@@ -152,7 +176,7 @@ function createServiceOps (deps = {}) {
       } else {
         try {
           fs.mkdirSync(jp.dirname(f.absPath), { recursive: true })
-          writeFile(f.absPath, f.content)
+          writeFile(f.absPath, f.content, { mode: f.mode })
         } catch (e) {
           await rollback(placed)
           return { ok: false, error: `写入 ${f.absPath} 失败: ${e.message}` }

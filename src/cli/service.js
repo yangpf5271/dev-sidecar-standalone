@@ -26,6 +26,15 @@ function platformLabel () {
 
 async function run (args) {
   const action = args[0]
+  // spec(service-management): Windows 侧 service 命令在 WSL 环境下 SHALL 明确拒绝并指引 Linux 流程
+  if (process.platform === 'win32') {
+    const ops = createServiceOps()
+    if (ops.isWSL()) {
+      console.error('❌ 当前在 WSL 环境中运行 Windows 版 dss，Windows 登录项操作不可用')
+      console.error('   请在 Windows 原生终端执行；或在 WSL 内使用 Linux 流程 (sudo dss service install)')
+      process.exit(1)
+    }
+  }
   if (action === 'install') return installCmd(args.slice(1))
   if (action === 'uninstall') return uninstallCmd(args.slice(1))
   if (action === 'status') return statusCmd(args.slice(1))
@@ -83,7 +92,13 @@ async function installCmd (args) {
     await startDaemon(args) // 失败时内部 exit(1) 并打印日志尾部
   }
 
-  const portReady = await probePort(ctx.addr.host, ctx.addr.httpPort)
+  // 端口验证带轮询(Linux/macOS 的 enable --now / launchctl load 返回时代理仍在启动;
+  // Windows 的 startDaemon 内部已轮询, 此处立即通过)
+  let portReady = false
+  for (let i = 0; i < 30 && !portReady; i++) {
+    portReady = await probePort(ctx.addr.host, ctx.addr.httpPort)
+    if (!portReady) await new Promise((r) => setTimeout(r, 500))
+  }
   if (!portReady) {
     console.error(`❌ 安装完成但代理端口 ${ctx.addr.host}:${ctx.addr.httpPort} 未就绪，请查 dss log`)
     process.exit(1)

@@ -39,7 +39,7 @@
 
 **D8 监管器探测 = 仅提示（已决策）**。探测方式按平台查本代理命名的 unit/任务/label 存在性；提示后照常执行既有 stop。备选自动委托被否决（跨平台执行链复杂且实质改变 stop 语义）。
 
-**D9 WSL 拒绝判定（已决策）**。win32 侧以互操作特征（WSL_DISTRO_NAME / WSL_INTEROP 环境变量）判定命中即拒绝并指引 Linux 流程——Windows 登录项在 WSL 内不可用；Linux 原生侧以内核标识（microsoft）判定用于诊断提示（WSL 内的 systemd unit 安装属 Linux 流程，不硬拒绝）。
+**D9 WSL 拒绝判定（已决策，WSL 实测修正）**。实测发现 WSL 默认不把 Linux 环境变量传给互操作启动的 Windows 进程（WSL_DISTRO_NAME 为 undefined），环境变量判定不可靠。最终形态：win32 侧用「父进程链回溯」（spawnSync 单次 PowerShell CIM 回溯 10 层，互操作进程的 Windows 父链上必有 wsl.exe/wslhost.exe；进程生命周期内缓存）叠加环境变量快路径；命中即拒绝并指引 Linux 流程。Linux 原生侧以内核标识（microsoft）判定用于诊断提示（WSL 内的 systemd unit 安装属 Linux 流程，不硬拒绝）。
 
 **D10 三平台全做（已决策）**。macOS launchd plist 生成器以单测锁定内容，真实加载标注"未实测"——模板化边际成本低，接口一次到位。
 
