@@ -14,6 +14,11 @@ const {
   resolveProxyAddress,
   isProcessAlive,
   waitForExit,
+  parsePidFileContent,
+  readPidInfo,
+  readPidFile,
+  writePidFile,
+  daemonVersionDiffers,
 } = require('./utils')
 
 test('makeConfigValueLabel: 读成功时 值→原样 / null→(未设置); 读失败→获取失败', () => {
@@ -171,4 +176,45 @@ test('isProcessAlive: 自身存活 / 非法输入 false', () => {
 
 test('waitForExit: 自身进程在超时窗内不会退出 → false', async () => {
   assert.equal(await waitForExit(process.pid, 400), false)
+})
+
+// ---------------------------------------------------------------------------
+// PID 文件 JSON 化 — 新格式 {pid,version,execPath} / 旧整数兼容 / 损坏按无 PID
+// ---------------------------------------------------------------------------
+
+test('parsePidFileContent: 新 JSON / 旧整数 / 损坏 / 空 四态', () => {
+  assert.deepEqual(parsePidFileContent('{"pid": 18328, "version": "1.6.0", "execPath": "C:\\\\node.exe"}'),
+    { pid: 18328, version: '1.6.0', execPath: 'C:\\node.exe' })
+  assert.deepEqual(parsePidFileContent('18328'), { pid: 18328, version: null, execPath: null }) // 旧版兼容
+  assert.equal(parsePidFileContent('{broken json'), null)   // 损坏按"无 PID"
+  assert.equal(parsePidFileContent('{"nointeger": true}'), null)
+  assert.equal(parsePidFileContent(''), null)
+  assert.equal(parsePidFileContent(null), null)
+})
+
+test('PID 文件读写: 写入含 version/execPath, 读回一致(临时主目录隔离)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dss-pid-test-'))
+  const savedHome = process.env.DEV_SIDECAR_HOME
+  process.env.DEV_SIDECAR_HOME = dir
+  try {
+    writePidFile(process.pid)
+    const info = readPidInfo()
+    assert.equal(info.pid, process.pid)
+    assert.equal(typeof info.version, 'string')
+    assert.ok(info.version.length > 0)
+    assert.equal(typeof info.execPath, 'string')
+    assert.equal(readPidFile(), process.pid)
+  } finally {
+    if (savedHome == null) delete process.env.DEV_SIDECAR_HOME
+    else process.env.DEV_SIDECAR_HOME = savedHome
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('daemonVersionDiffers: 只判相等不判新旧, 信息缺失静默跳过', () => {
+  assert.equal(daemonVersionDiffers({ pid: 1, version: '1.6.0', execPath: null }, '1.6.0'), false)
+  assert.equal(daemonVersionDiffers({ pid: 1, version: '1.5.0', execPath: null }, '1.6.0'), true) // 旧于 CLI
+  assert.equal(daemonVersionDiffers({ pid: 1, version: '1.7.0', execPath: null }, '1.6.0'), true) // 新于 CLI(wrapper 合法常态) — 同样告警
+  assert.equal(daemonVersionDiffers({ pid: 1, version: null, execPath: null }, '1.6.0'), false)   // 旧整数格式无版本 → 跳过
+  assert.equal(daemonVersionDiffers(null, '1.6.0'), false)
 })

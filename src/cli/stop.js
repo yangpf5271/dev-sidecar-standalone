@@ -18,6 +18,7 @@ const {
   terminateProcess,
 } = require('./utils')
 const { smartRestore } = require('./restore-config')
+const { createServiceOps } = require('./lib/service-ops')
 
 /**
  * 停止守护进程（不处理配置恢复）。restart 复用此函数。
@@ -25,6 +26,19 @@ const { smartRestore } = require('./restore-config')
  */
 async function stopDaemon (args) {
   const addr = resolveProxyAddress(args)
+
+  // 监管器归属提示(spec: service-management): 服务定义在管时提示管理器通道, 照常执行不改 stop 语义
+  try {
+    const ops = createServiceOps()
+    if (await ops.detectSupervisor()) {
+      console.log('ℹ️  检测到 dss 服务定义在管(开机自启), 建议优先使用管理器通道停止:')
+      console.log(`   ${ops.managerStopHint()}`)
+      console.log('   现按当前指令继续停止(管理器可能按策略重新拉起)...')
+      console.log('')
+    }
+  } catch {
+    // 探测失败不阻断停止流程
+  }
 
   let pid = null
 

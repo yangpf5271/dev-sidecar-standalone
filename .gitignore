@@ -21,3 +21,4 @@ test-*.js
 
 # 会话工具目录
 .zcode/
+.council/

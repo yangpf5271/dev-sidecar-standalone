@@ -383,7 +383,7 @@ set NO_PROXY=localhost,127.0.0.1
 | 测速/择优 | 有 | 有 |
 | CLI 命令 | 无 | `dss` 命令 |
 | Docker 原生支持 | 无 | 提供 Dockerfile |
-| systemd 服务 | 无 | 提供配置方案 |
+| 开机自启 | 无 | `dss service install` 三平台（Windows/macOS/Linux） |
 
 ---
 

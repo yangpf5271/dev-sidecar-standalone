@@ -63,6 +63,7 @@ async function startDaemon (args) {
       cwd: process.cwd(),
       stdio: ['ignore', fd, fd], // 子进程持有 fd 副本，父进程关闭不影响
       detached: true,
+      windowsHide: true, // 守护进程无需控制台(避免杂散窗口)
       env: { ...process.env, DSS_DAEMON: '1' },
     })
   } catch (e) {

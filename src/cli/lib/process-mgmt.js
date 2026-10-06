@@ -3,17 +3,58 @@ const fs = require('node:fs')
 const { pidFilePath, ensureUserBasePath } = require('./paths')
 const { IS_WIN, runCommand } = require('./exec')
 
-function readPidFile () {
+/** 解析 PID 文件内容 → { pid, version, execPath } | null
+ *  新格式 JSON {pid,version,execPath}; 旧版纯整数兼容读取(信息缺失置 null); 损坏按"无 PID" */
+function parsePidFileContent (text) {
+  const s = String(text || '').trim()
+  if (!s) return null
+  if (s.startsWith('{')) {
+    try {
+      const o = JSON.parse(s)
+      if (!Number.isInteger(o.pid)) return null
+      return {
+        pid: o.pid,
+        version: typeof o.version === 'string' ? o.version : null,
+        execPath: typeof o.execPath === 'string' ? o.execPath : null,
+      }
+    } catch {
+      return null
+    }
+  }
+  const n = parseInt(s, 10)
+  return Number.isInteger(n) && n > 0 ? { pid: n, version: null, execPath: null } : null
+}
+
+function readPidInfo () {
   try {
-    return parseInt(fs.readFileSync(pidFilePath(), 'utf8').trim(), 10) || null
+    return parsePidFileContent(fs.readFileSync(pidFilePath(), 'utf8'))
   } catch {
     return null
   }
 }
 
+function readPidFile () {
+  const info = readPidInfo()
+  return info ? info.pid : null
+}
+
+/** 写入守护进程身份凭证(JSON): pid + 写入进程的 version/execPath。
+ *  服务定义拉起的前台进程与后台子进程共用此写入, 版本僵比对覆盖全部拉起路径 */
 function writePidFile (pid) {
   ensureUserBasePath()
-  fs.writeFileSync(pidFilePath(), String(pid), 'utf8')
+  const info = {
+    pid: Number(pid),
+    version: require('../../../package.json').version,
+    execPath: process.execPath,
+  }
+  fs.writeFileSync(pidFilePath(), JSON.stringify(info, null, 2), 'utf8')
+}
+
+/** 守护进程与 CLI 版本是否不一致(版本僵告警判定)。
+ *  只判相等、不判新旧方向 —— wrapper 部署下版本差异属合法常态, 判方向会产生假阳性;
+ *  任一方信息缺失视为一致(静默跳过) */
+function daemonVersionDiffers (info, cliVersion) {
+  return !!(info && info.version && cliVersion && info.version !== cliVersion)
 }
 
 function removePidFile () {
@@ -200,8 +241,11 @@ async function terminateProcess (pid, { graceMs = 5000 } = {}) {
 }
 
 module.exports = {
+  parsePidFileContent,
+  readPidInfo,
   readPidFile,
   writePidFile,
+  daemonVersionDiffers,
   removePidFile,
   isProcessAlive,
   waitForExit,

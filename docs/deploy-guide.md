@@ -120,6 +120,34 @@ nohup dss > /var/log/dev-sidecar.log 2>&1 &
 
 ---
 
+## 开机自启 (dss service) —— 推荐
+
+一条命令注册/移除/检查开机自启，三平台统一入口：
+
+```bash
+dss service install     # 生成并注册服务定义，立即拉起代理并验证
+dss service status      # 四态: 未安装 / 运行中 / 已安装未运行 / 版本不一致
+dss service uninstall   # 移除服务定义并停止受管代理
+```
+
+各平台载体（运行身份恒为安装用户）：
+
+| 平台 | 载体 | 权限 | 说明 |
+|---|---|---|---|
+| Windows | HKCU Run 登录项 + 无窗口包装脚本 | 免管理员 | 仅当前用户登录时触发；计划任务 ONLOGON 需管理员权限故不采用 |
+| Linux | 系统级 systemd unit（`User=<安装用户>`、`Restart=always`） | 需 sudo | 开机即起，无需用户登录 |
+| macOS | launchd agent（RunAtLoad） | 免管理员 | **未实测**，有问题请提 issue |
+
+行为说明：
+
+- **自启 = 仅代理待命**。npm/git 代理配置仍由 `dss npm on` 等命令手动管理，服务不会替你配置工具。
+- **版本僵告警**：`npm update -g` 不会重启在跑的守护进程。`dss status` 会比对守护进程与 CLI 版本，不一致即提示 `dss restart` 对齐。更新 dss 后的正确节律是三步：**更新 → 重启守护（`dss restart`）→ 核对（`dss status`）**。
+- **数据目录钉死**：install 时环境中的 `DEV_SIDECAR_HOME` 会被固化进服务定义；之后修改该值需重新 `install`，否则服务进程与 CLI 会解析到不同数据目录。
+- **与 dss stop 的边界**：Linux/macOS 下服务由管理器托管，`dss stop` 会提示改用 `systemctl stop` / `launchctl unload`（提示后仍按指令执行；管理器可能按策略重新拉起）。Windows 登录项是纯触发器，`dss stop` 即本次停止，下次登录会再次拉起；不再需要自启请 `dss service uninstall`。
+- **Linux**：install/uninstall 需要 sudo（unit 写入 `/etc/systemd/system`）；入口脚本每次启动重扫 nvm 版本目录，切换 Node 版本无需重新 install。
+
+---
+
 ## systemd 服务 (Linux)
 
 > **注意：** 如果使用 nvm 安装的 Node.js，systemd 环境默认不包含 nvm 路径，

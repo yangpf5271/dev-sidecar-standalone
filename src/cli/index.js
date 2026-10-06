@@ -12,6 +12,7 @@ const SUBCOMMANDS = {
   env: () => require('./env'),
   cert: () => require('./cert'),
   status: () => require('./status'),
+  service: () => require('./service'),
   restore: () => require('./restore'),
 }
 
@@ -21,6 +22,8 @@ const USAGE = `进程管理:
   dss restart            重启代理（保留配置）
   dss log [-f] [-n N]    查看守护进程日志
   dss status             全景状态: 进程/证书信任/工具代理/镜像源/Docker
+  dss service install    开机自启: 生成并注册服务定义(三平台), 立即拉起并验证
+  dss service status     服务四态: 未安装/运行中/已安装未运行/版本不一致
 
 一键配置:
   dss npm on [--mitm]   配置 npm 走代理（--mitm 启用 HTTPS 拦截加速）

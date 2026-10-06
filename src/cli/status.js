@@ -5,7 +5,8 @@ const {
   resolveProxyAddress,
   resolveCertPaths,
   probePort,
-  readPidFile,
+  readPidInfo,
+  daemonVersionDiffers,
   detectCertTrust,
   isProcessAlive,
   verifyProcessIdentity,
@@ -13,6 +14,8 @@ const {
 const { adapters } = require('./tool-config')
 const { NPM_OFFICIAL, npmMirrorEngine, PIP_OFFICIAL, pipMirrorEngine } = require('./tool-config/mirror-registry')
 const { normUrl } = require('./tool-config/mirror-engine')
+const { createServiceOps } = require('./lib/service-ops')
+const { KIND_LABELS } = require('./lib/service-definitions')
 const pull = require('./docker-pull')
 const { detectResidue } = require('./restore-config')
 
@@ -34,9 +37,13 @@ async function run (args) {
   if (running) {
     console.log('  代理进程:  ✅ 运行中')
     // PID 展示（守护进程才有 PID 文件；前台实例无）
-    const pid = readPidFile()
-    if (pid != null && isProcessAlive(pid)) {
-      console.log(`  进程 PID:  ${pid}${await verifyProcessIdentity(pid) ? '' : ' (⚠️ 身份未确认)'}`)
+    const pidInfo = readPidInfo()
+    if (pidInfo && isProcessAlive(pidInfo.pid)) {
+      console.log(`  进程 PID:  ${pidInfo.pid}${await verifyProcessIdentity(pidInfo.pid) ? '' : ' (⚠️ 身份未确认)'}`)
+      // 版本僵告警: 更新后守护进程仍跑旧代码(npm 更新从不重启在跑的进程) —— 只判相等不判新旧
+      if (daemonVersionDiffers(pidInfo, pkg.version)) {
+        console.log(`  ⚠️ 版本僵:  守护进程 v${pidInfo.version} ≠ CLI v${pkg.version}，建议 dss restart 对齐`)
+      }
     }
   } else {
     console.log('  代理进程:  ❌ 未运行')
@@ -57,6 +64,22 @@ async function run (args) {
     } else {
       console.log('  系统信任:   ⚠️ 未安装 (MITM 加速需信任，运行 dss cert 查看安装方法)')
     }
+  }
+
+  // 服务定义状态行(未安装不显示, 不干扰既有面板结构)
+  try {
+    const svc = await createServiceOps().status(addr)
+    if (svc.installed) {
+      const kindName = KIND_LABELS[process.platform === 'win32' ? 'runkey' : process.platform === 'darwin' ? 'launchd' : 'systemd']
+      const label = svc.state === 'running'
+        ? `✅ 运行中 (${kindName})`
+        : svc.state === 'version-mismatch'
+          ? `✅ 运行中 (${kindName})  ⚠️ 版本不一致(建议 dss restart)`
+          : '⚠️ 已安装但未运行'
+      console.log(`  服务定义:   ${label}`)
+    }
+  } catch {
+    // 服务探测失败不影响面板其余部分
   }
 
   console.log('')
