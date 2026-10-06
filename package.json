@@ -33,7 +33,9 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:e2e": "node --test e2e/proxy-plane.e2e.js e2e/cli-lifecycle.e2e.js",
+    "test:e2e:wsl": "bash scripts/e2e-wsl.sh"
   },
   "files": [
     "index.js",

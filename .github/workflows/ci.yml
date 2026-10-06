@@ -357,3 +357,27 @@ jobs:
           sudo rm -f /etc/docker/daemon.json
           node index.js status > /dev/null
           echo "docker pull-layer read path passed"
+
+  # e2e 测试体系(test/e2e): 真实代理进程 × 本地 mock 上游(零外网) + 隔离 HOME 的 CLI 生命周期。
+  # Linux 含 systemd 真实 service 安装/卸载(把判定书搁置表的 Linux 真机验证自动化);
+  # Windows 跑数据面+生命周期(service 用例自动跳过); macOS 不入矩阵(launchd 未实测)
+  e2e:
+    name: E2E (${{ matrix.os }})
+    needs: unit
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: E2E (proxy data plane + CLI lifecycle)
+        run: npm run test:e2e
