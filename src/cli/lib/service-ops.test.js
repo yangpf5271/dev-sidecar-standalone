@@ -3,6 +3,8 @@
 const { test } = require('node:test')
 const assert = require('node:assert')
 const path = require('node:path')
+const { posix: posixPath, win32: win32Path } = require('node:path')
+const os = require('node:os')
 const { createServiceOps } = require('./service-ops')
 const { fakeRun } = require('../tool-config/helpers')
 
@@ -43,7 +45,9 @@ const CTX = {
   addr: { host: '127.0.0.1', mitmPort: 31181, httpPort: 31180 },
 }
 
-const VBS = path.join(CTX.userBasePath, 'dss-service.vbs')
+// fake-disk 的 key 必须与实现同款 joinFor 平台语义 —— 宿主 path 模块在 Linux 宿主上
+// 会产生混合分隔符, 与实现的 win32Path 产物错位(CI 实测), 故按平台显式选择
+const VBS = win32Path.join(CTX.userBasePath, 'dss-service.vbs')
 
 function winOps ({ routes = [], disk = {}, isWSL = () => false, pidInfo = null, cliVersion = '1.6.0', pidTrusted = true, portUp = true } = {}) {
   const ffs = fakeFs(disk)
@@ -281,7 +285,7 @@ test('installDefinition: 写入安装解析快照 manifest(不变式③基准)',
   const { ops, ffs } = winOps({ disk: {}, cliVersion: '1.6.0' })
   const r = await ops.installDefinition({ ...CTX, startEnv: { PORT: '44181' } })
   assert.equal(r.ok, true)
-  const manifestPath = path.join(CTX.userBasePath, 'dss-service.json')
+  const manifestPath = win32Path.join(os.homedir(), '.dev-sidecar', 'dss-service.json') // 实现: 固定默认主目录(刻意不跟随 DEV_SIDECAR_HOME)
   assert.ok(ffs.disk.has(manifestPath))
   const m = JSON.parse(ffs.disk.get(manifestPath))
   assert.equal(m.installedVersion, '1.6.0')
@@ -322,7 +326,7 @@ test('replayDrifts: 数据目录漂移 / 入口失效 / 无快照跳过', () => 
 // ---------------------------------------------------------------------------
 
 test('P0-1 manifest 写失败: 降级为成功+警告, 不再报假失败', async () => {
-  const manifestPath = path.join(CTX.userBasePath, 'dss-service.json')
+  const manifestPath = win32Path.join(os.homedir(), '.dev-sidecar', 'dss-service.json') // 实现: 固定默认主目录(刻意不跟随 DEV_SIDECAR_HOME)
   const { ops, ffs } = winOps({ disk: {} })
   // 模拟: manifest 目录不可写(vbs 可写) —— 用 writeFile 注入对 manifest 路径抛错
   const ops2 = createServiceOps({
