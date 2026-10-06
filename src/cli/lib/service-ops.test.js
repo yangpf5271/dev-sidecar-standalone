@@ -482,6 +482,7 @@ test('darwin installDefinition: plist+wrapper 落用户目录(免 sudo) → laun
     user: 'yangpf', userBasePath: '/Users/yangpf/.dev-sidecar', devSidecarHome: null, npmPrefix: null,
     addr: CTX.addr,
   })
+  if (!r.ok) console.error('DARWIN DIAG:', JSON.stringify({ ok: r.ok, error: r.error, calls, disk: [...ffs.disk.keys()], release: os.release() }))
   assert.equal(r.ok, true)
   assert.ok(ffs.writes.some((w) => w.p.endsWith('com.dss.daemon.plist')))
   assert.ok(ffs.writes.some((w) => w.p.endsWith('dss-service-wrapper')))
