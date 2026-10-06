@@ -469,6 +469,9 @@ test('linux uninstall: disable --now → sudo rm → daemon-reload', async () =>
 test('darwin installDefinition: plist+wrapper 落用户目录(免 sudo) → launchctl load', async () => {
   const { run, calls } = recordingFakeRun()
   const ffs = fakeFs()
+  // userBasePath 用 runner/CI 均可写的 posix 深路径(真实 macOS 形态是 /Users/<u>/.dev-sidecar,
+  // 但 CI Linux runner 无权 mkdir /Users —— 单测关心编排逻辑而非宿主权限)
+  const darwinBase = posixPath.join(os.tmpdir(), 'Users', 'yangpf', '.dev-sidecar')
   const ops = createServiceOps({
     platform: 'darwin',
     runCommand: run,
@@ -476,15 +479,14 @@ test('darwin installDefinition: plist+wrapper 落用户目录(免 sudo) → laun
     writeFile: ffs.writeFile,
     unlinkFile: ffs.unlinkFile,
     probePort: async () => true,
-    userBasePath: '/Users/yangpf/.dev-sidecar',
+    userBasePath: darwinBase,
   })
   const r = await ops.installDefinition({
-    user: 'yangpf', userBasePath: '/Users/yangpf/.dev-sidecar', devSidecarHome: null, npmPrefix: null,
+    user: 'yangpf', userBasePath: darwinBase, devSidecarHome: null, npmPrefix: null,
     addr: CTX.addr,
   })
-  if (!r.ok) console.error('DARWIN DIAG:', JSON.stringify({ ok: r.ok, error: r.error, calls, disk: [...ffs.disk.keys()], release: os.release() }))
   assert.equal(r.ok, true)
   assert.ok(ffs.writes.some((w) => w.p.endsWith('com.dss.daemon.plist')))
   assert.ok(ffs.writes.some((w) => w.p.endsWith('dss-service-wrapper')))
-  assert.ok(calls.some((c) => c.includes('launchctl load -w /Users/yangpf/.dev-sidecar/Library/LaunchAgents/com.dss.daemon.plist')))
+  assert.ok(calls.some((c) => c.includes(`launchctl load -w ${darwinBase}/Library/LaunchAgents/com.dss.daemon.plist`)))
 })
