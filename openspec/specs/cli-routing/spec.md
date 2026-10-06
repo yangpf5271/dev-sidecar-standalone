@@ -1,7 +1,7 @@
 # cli-routing Specification
 
 ## Purpose
-TBD - created by archiving change add-mirror-engine-routing. Update Purpose after archive.
+定义 `dss` 入口的参数解析契约：route(argv) 纯函数单点决策（子命令/help/version/daemon/run/error），判定顺序即不变量；配置文件旗标三种形式文法统一；未知参数的错误提示与子命令建议同居路由层，全程表驱动可测。
 ## Requirements
 ### Requirement: 入口参数单点路由
 `dss` 的入口参数 SHALL 由一个纯函数 `route(argv)` 单点解析，返回结构化决策（subcommand / help / version / daemon / run / error）；index.js SHALL 仅按决策分发执行。判定顺序即不变量：① argv[0] 为已知子命令 → subcommand（保证 `dss npm -d` 等子命令参数不会被误判为 daemon 旗标）② help/version 旗标 → help/version（优先于 daemon）③ daemon 旗标 → daemon ④ 配置/未知选项/位置参数解析 ⑤ 其余 → run。
