@@ -143,7 +143,7 @@ dss service uninstall   # 移除服务定义并停止受管代理
 - **自启 = 仅代理待命**。npm/git 代理配置仍由 `dss npm on` 等命令手动管理，服务不会替你配置工具。
 - **版本僵告警**：`npm update -g` 不会重启在跑的守护进程。`dss status` 会比对守护进程与 CLI 版本，不一致即提示 `dss restart` 对齐。更新 dss 后的正确节律是三步：**更新 → 重启守护（`dss restart`）→ 核对（`dss status`）**。
 - **数据目录钉死**：install 时环境中的 `DEV_SIDECAR_HOME` 会被固化进服务定义；之后修改该值需重新 `install`，否则服务进程与 CLI 会解析到不同数据目录。
-- **与 dss stop 的边界**：Linux/macOS 下服务由管理器托管，`dss stop` 会提示改用 `systemctl stop` / `launchctl unload`（提示后仍按指令执行；管理器可能按策略重新拉起）。Windows 登录项是纯触发器，`dss stop` 即本次停止，下次登录会再次拉起；不再需要自启请 `dss service uninstall`。
+- **与 dss stop/restart 的边界**：Linux/macOS 下服务由管理器托管，停止用 `systemctl stop dss.service`（macOS: `launchctl unload -w`），重启用 `systemctl restart dss.service`；`dss stop` 会提示该边界（提示后仍按指令执行；管理器可能按策略重新拉起）。**切勿在服务在管时用 `dss restart`** —— 它杀掉管理器的主进程后又拉起一个不受管辖的实例，与管理器自动拉起形成竞态（单元永久抖动或状态说谎）。Windows 登录项是纯触发器，`dss stop` 即本次停止，下次登录会再次拉起；不再需要自启请 `dss service uninstall`。
 - **Linux**：install/uninstall 需要 sudo（unit 写入 `/etc/systemd/system`）；入口脚本每次启动重扫 nvm 版本目录，切换 Node 版本无需重新 install。
 
 ---

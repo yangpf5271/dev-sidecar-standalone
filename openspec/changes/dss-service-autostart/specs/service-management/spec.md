@@ -87,7 +87,7 @@ PID 文件 SHALL 记录 {pid, version, execPath} 并在读取时兼容旧整数�
 
 ### Requirement: 监管器归属提示
 
-`dss stop` 执行前 SHALL 探测本机是否存在本代理的服务定义（systemd unit / HKCU Run 值 / launchd label）；存在时 SHALL 输出"建议使用管理器通道停止"的提示，随后照常执行既有 stop 流程——MUST NOT 委托管理器执行、MUST NOT 拒绝执行、MUST NOT 改变 stop 的既有用户可见行为。
+`dss stop` 执行前 SHALL 探测本机是否存在本代理的服务定义（systemd unit / HKCU Run 值 / launchd label）；存在时 SHALL 输出"建议使用管理器通道停止"的提示，随后照常执行既有 stop 流程——MUST NOT 委托管理器执行、MUST NOT 拒绝执行、MUST NOT 改变 stop 的既有用户可见行为。被监管场景的 restart 边界 SHALL 与 stop 一并文档化（服务在管时 restart 须走管理器通道，`dss restart` 会与管理器自动拉起产生竞态），帮助文案与部署文档 MUST NOT 引导用户在服务在管时使用 `dss restart`。
 
 #### Scenario: 托管场景的提示与照常执行
 

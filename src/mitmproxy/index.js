@@ -25,9 +25,8 @@ const api = {
     })
     servers = newServers
 
-    // 等待全部端口监听成功才算启动成功。
-    // 此前监听失败(如端口被占用 EADDRINUSE)只记日志, start() 仍会 resolve,
-    // 导致主程序打印"启动成功"但实际没有任何端口在工作
+    // 等待全部端口监听成功才算启动成功; 监听失败(如端口被占用 EADDRINUSE)
+    // 在此 reject → 调用方以非零退出码结束(不会出现"打印启动成功但无端口在工作")
     try {
       await waitForListening(newServers)
     } catch (e) {

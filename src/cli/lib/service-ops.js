@@ -16,7 +16,7 @@ const {
 } = require('./service-definitions')
 const { runCommand, probePort } = require('./exec')
 const { resolveCertPaths } = require('./paths')
-const { readPidInfo, daemonVersionDiffers, isProcessAlive } = require('./process-mgmt')
+const { readPidInfo, daemonVersionDiffers, isProcessAlive, verifyProcessIdentity } = require('./process-mgmt')
 
 // 与生成器同纪律: 路径语义跟随「注入的平台」而非宿主
 const { posix: posixPath, win32: win32Path } = require('node:path')
@@ -32,6 +32,7 @@ function createServiceOps (deps = {}) {
   const cliVersion = deps.cliVersion || require('../../../package.json').version
   const userBasePath = deps.userBasePath || resolveCertPaths().userBasePath
   const readPid = deps.readPidInfo || readPidInfo
+  const verifyPid = deps.verifyProcessIdentity || verifyProcessIdentity
   // WSL 判定(设计 D9): 环境变量在互操作场景不可靠(WSL 默认不传 Linux env 给 Windows 进程,
   // 实测 WSL_DISTRO_NAME 为 undefined), 因此 win32 采用「父进程链回溯」——互操作启动的进程
   // 其 Windows 父链上必有 wsl.exe。linux 平台以内核标识(microsoft)判定, 仅用于诊断提示。
@@ -337,25 +338,58 @@ function createServiceOps (deps = {}) {
     }
   }
 
-  /**
-   * 重放比对(不变式③核心, 纯函数): 安装时快照 vs 当前解析。
-   * current: { devSidecarHome, npmPrefix, configPath, startEnv, addr }
-   * 返回漂移列表(空 = 无漂移); npmPrefix 仅在其存在为前提时校验 shim 存续
-   */
+  /** 重放比对(不变式③, 纯函数): 安装时快照 vs 当前解析。
+   *  current: { devSidecarHome, npmPrefix, configPath, startEnv, addr }
+   *  返回漂移列表(空 = 无漂移)。
+   *  覆盖面: 数据目录分裂 / 入口 shim 失效 / 固化配置文件被删(服务将启动失败) ——
+   *  startEnv/host/port 不参与比对: 服务按固化值运行, 当前 env 与其不同是预期而非漂移 */
   function replayDrifts (manifest, current) {
     if (!manifest) return []
     const drifts = []
     if ((manifest.devSidecarHome || null) !== (current.devSidecarHome || null)) {
       drifts.push(`数据目录漂移: 安装时 DEV_SIDECAR_HOME=${manifest.devSidecarHome || '(未设置)'} ≠ 当前 ${current.devSidecarHome || '(未设置)'}，服务与 CLI 将解析到不同数据目录，请重新 install`)
     }
-    if (manifest.npmPrefix && !existsFile(win32Path.join(manifest.npmPrefix, 'dss.cmd'))) {
+    if (platform === 'win32' && manifest.npmPrefix && !existsFile(win32Path.join(manifest.npmPrefix, 'dss.cmd'))) {
       drifts.push(`入口失效: 安装时的 shim ${manifest.npmPrefix}\\dss.cmd 已不存在(Node 版本变更?)，请重新 install`)
+    }
+    if (manifest.configPath && !existsFile(manifest.configPath)) {
+      drifts.push(`配置文件失效: 安装时固化的 ${manifest.configPath} 已不存在，服务启动将失败，请重新 install`)
     }
     return drifts
   }
 
+  /** 面板统一地址(status.js 进程行/端口行与服务行同源, 消除同屏自相矛盾):
+   *  manifest 存在时以固化地址为准 —— 服务按安装时配置运行, 当前 env 不影响它 */
+  function effectiveAddr (addr) {
+    const manifest = readManifest()
+    return manifest
+      ? { host: manifest.host, httpPort: manifest.httpPort, mitmPort: manifest.mitmPort }
+      : addr
+  }
+
+  /** systemd 崩溃循环检测(Linux; 判定书 P1): Restart=always+RestartSec=5 永远达不到
+   *  systemd 熔断阈值, 无此检测则循环静默。
+   *  判定: ActiveState=failed(已放弃) 或 activating+重启计数≥2(auto-restart 退避窗内反复失败)。
+   *  NRestarts 是自 unit 加载以来的累计值, active(正常)时不构成循环证据 */
+  async function systemdCrashInfo () {
+    if (platform !== 'linux') return null
+    try {
+      const r = await run('systemctl', ['show', SERVICE_UNIT_NAME, '-p', 'ActiveState', '-p', 'NRestarts', '-p', 'Result'])
+      if (!r.ok) return null
+      const get = (k) => {
+        const line = (r.stdout || '').split(/\r?\n/).find((l) => l.startsWith(`${k}=`))
+        return line ? line.slice(k.length + 1).trim() : null
+      }
+      return { activeState: get('ActiveState'), nRestarts: Number(get('NRestarts')) || 0, result: get('Result') }
+    } catch {
+      return null
+    }
+  }
+
   /** 服务状态四态: not-installed / installed-not-running / running / version-mismatch。
-   *  探测地址优先取 manifest 固化值(启动配置固化后, 安装时 PORT/HOST 可能已不在当前环境) */
+   *  探测地址优先取 manifest 固化值(启动配置固化后, 安装时 PORT/HOST 可能已不在当前环境)。
+   *  版本僵比对仅在「PID 存活且身份验证通过」时进行 —— 死 PID 残留给活进程报假告警、
+   *  无关进程复用 PID 撑出假绿, 两类失效均被身份门消除(判定书 P1 #24) */
   async function status (addr) {
     const manifest = readManifest()
     const effAddr = manifest
@@ -363,16 +397,35 @@ function createServiceOps (deps = {}) {
       : addr
     const installed = await detectSupervisor()
     const info = readPid()
-    const running = !!(info && isProcessAlive(info.pid)) || (await probe(effAddr.host, effAddr.httpPort))
+    let pidTrusted = false
+    if (info && isProcessAlive(info.pid)) {
+      try { pidTrusted = await verifyPid(info.pid) } catch { pidTrusted = false }
+    }
+    const portUp = await probe(effAddr.host, effAddr.httpPort)
+    const running = portUp || pidTrusted
+    // 崩溃循环检测在所有 installed 态下都要做 —— 循环的表象恰恰是 installed-not-running
+    const crash = platform === 'linux' && installed ? await systemdCrashInfo() : null
+    const crashLoop = !!(crash && (crash.activeState === 'failed' || (crash.activeState === 'activating' && crash.nRestarts >= 2)))
     if (!installed) return { installed: false, state: 'not-installed', running: false }
-    if (!running) return { installed: true, state: 'installed-not-running', running: false }
-    const versionMismatch = daemonVersionDiffers(info, cliVersion)
+    if (!running) {
+      return {
+        installed: true,
+        state: 'installed-not-running',
+        running: false,
+        crashLoop,
+        crash,
+      }
+    }
+    // 版本比对只在 PID 可信时进行; 运行证据仅来自端口(如前台实例)时守护版本未知, 静默跳过
+    const versionMismatch = pidTrusted && daemonVersionDiffers(info, cliVersion)
     return {
       installed: true,
       state: versionMismatch ? 'version-mismatch' : 'running',
       running: true,
       versionMismatch,
-      daemonVersion: info ? info.version : null,
+      daemonVersion: pidTrusted ? info.version : null,
+      crashLoop,
+      crash,
     }
   }
 
@@ -385,6 +438,7 @@ function createServiceOps (deps = {}) {
     isWSL,
     readManifest,
     replayDrifts,
+    effectiveAddr,
   }
 }
 

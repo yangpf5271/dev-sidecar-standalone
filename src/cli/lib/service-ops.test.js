@@ -45,7 +45,7 @@ const CTX = {
 
 const VBS = path.join(CTX.userBasePath, 'dss-service.vbs')
 
-function winOps ({ routes = [], disk = {}, isWSL = () => false, pidInfo = null, cliVersion = '1.6.0' } = {}) {
+function winOps ({ routes = [], disk = {}, isWSL = () => false, pidInfo = null, cliVersion = '1.6.0', pidTrusted = true, portUp = true } = {}) {
   const ffs = fakeFs(disk)
   const { run, calls } = recordingFakeRun(routes)
   const ops = createServiceOps({
@@ -54,10 +54,11 @@ function winOps ({ routes = [], disk = {}, isWSL = () => false, pidInfo = null, 
     existsFile: ffs.existsFile,
     writeFile: ffs.writeFile,
     unlinkFile: ffs.unlinkFile,
-    probePort: async () => true,
+    probePort: async () => portUp,
     userBasePath: CTX.userBasePath,
     isWSL,
     readPidInfo: () => pidInfo,
+    verifyProcessIdentity: async () => pidTrusted,
     cliVersion,
   })
   return { ops, calls, ffs }
@@ -140,13 +141,109 @@ test('status 四态: 未安装/已安装未运行/运行中/版本不一致', as
   })
   assert.equal((await notRunning.status(CTX.addr)).state, 'installed-not-running')
 
-  const running = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: 1, version: '1.6.0', execPath: null }, cliVersion: '1.6.0' })
+  // pid 用 process.pid: 存活探测必须通过才能进入版本比对(身份验证由 winOps 注入为 true)
+  const running = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: process.pid, version: '1.6.0', execPath: null }, cliVersion: '1.6.0' })
   assert.equal((await running.ops.status(CTX.addr)).state, 'running')
 
-  const mismatch = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: 1, version: '1.5.0', execPath: null }, cliVersion: '1.6.0' })
+  const mismatch = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: process.pid, version: '1.5.0', execPath: null }, cliVersion: '1.6.0' })
   const s = await mismatch.ops.status(CTX.addr)
   assert.equal(s.state, 'version-mismatch')
   assert.equal(s.daemonVersion, '1.5.0')
+})
+
+test('P1 版本僵假阳消除: PID 身份验证失败 → 版本比对静默跳过(运行证据仅来自端口)', async () => {
+  const untrusted = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: 1, version: '1.0.0', execPath: null }, cliVersion: '1.6.0', pidTrusted: false })
+  const s = await untrusted.ops.status(CTX.addr)
+  assert.equal(s.state, 'running')
+  assert.equal(s.versionMismatch, false, '不可信 PID 的版本不得给活进程报假告警')
+  assert.equal(s.daemonVersion, null)
+})
+
+test('P1 假绿消除: PID 存活但身份验证失败 + 端口不通 → 已安装未运行(不被无关进程撑出假绿)', async () => {
+  // pid=process.pid 保证存活探测通过, 身份验证注入 false → 不可信
+  const ops = createServiceOps({
+    platform: 'win32',
+    runCommand: recordingFakeRun([[/reg query/, { ok: true }]]).run,
+    existsFile: () => false,
+    probePort: async () => false,
+    userBasePath: CTX.userBasePath,
+    readPidInfo: () => ({ pid: process.pid, version: '1.6.0', execPath: null }),
+    verifyProcessIdentity: async () => false,
+    cliVersion: '1.6.0',
+  })
+  const s = await ops.status(CTX.addr)
+  assert.equal(s.state, 'installed-not-running')
+})
+
+test('P1 崩溃循环: activating+重启计数≥2(auto-restart 退避窗) → crashLoop true', async () => {
+  const unitPath = '/etc/systemd/system/dss.service'
+  const ops = createServiceOps({
+    platform: 'linux',
+    runCommand: recordingFakeRun([
+      [/systemctl show/, { ok: true, stdout: 'ActiveState=activating\nNRestarts=3\nResult=exit-code' }],
+    ]).run,
+    existsFile: (p) => p === unitPath,
+    probePort: async () => false, // 代理未起 — 循环表象恰是 installed-not-running
+    userBasePath: '/home/yangpf/.dev-sidecar',
+    readPidInfo: () => null,
+    verifyProcessIdentity: async () => false,
+  })
+  const s = await ops.status({ host: '127.0.0.1', httpPort: 31180, mitmPort: 31181 })
+  assert.equal(s.state, 'installed-not-running')
+  assert.equal(s.crashLoop, true)
+})
+
+test('P1 崩溃循环: systemd failed/NRestarts>=3 → crashLoop 主动信号(Linux)', async () => {
+  const unitPath = '/etc/systemd/system/dss.service'
+  const ops = createServiceOps({
+    platform: 'linux',
+    runCommand: recordingFakeRun([
+      [/systemctl show/, { ok: true, stdout: 'ActiveState=failed\nNRestarts=7\nResult=exit-code' }],
+    ]).run,
+    existsFile: (p) => p === unitPath,
+    probePort: async () => true,
+    userBasePath: '/home/yangpf/.dev-sidecar',
+    readPidInfo: () => null,
+    verifyProcessIdentity: async () => false,
+  })
+  const s = await ops.status({ host: '127.0.0.1', httpPort: 31180, mitmPort: 31181 })
+  assert.equal(s.crashLoop, true)
+  assert.equal(s.crash.activeState, 'failed')
+})
+
+test('P1 无崩溃循环: ActiveState=running → crashLoop false; 非 Linux → null', async () => {
+  const unitPath = '/etc/systemd/system/dss.service'
+  const l = createServiceOps({
+    platform: 'linux',
+    runCommand: recordingFakeRun([
+      [/systemctl show/, { ok: true, stdout: 'ActiveState=running\nNRestarts=0\nResult=success' }],
+    ]).run,
+    existsFile: (p) => p === unitPath,
+    probePort: async () => true,
+    userBasePath: '/home/yangpf/.dev-sidecar',
+    readPidInfo: () => null,
+  })
+  const s = await l.status({ host: '127.0.0.1', httpPort: 31180, mitmPort: 31181 })
+  assert.equal(s.crashLoop, false)
+
+  const w = winOps({ routes: [[/reg query/, { ok: true }]], pidInfo: { pid: 1, version: '1.6.0', execPath: null }, cliVersion: '1.6.0' })
+  const sw = await w.ops.status(CTX.addr)
+  assert.equal(sw.crash, null)
+})
+
+test('P1 重放补全: 固化 configPath 文件被删 → 漂移告警', () => {
+  const ops = createServiceOps({
+    platform: 'win32',
+    runCommand: recordingFakeRun().run,
+    userBasePath: CTX.userBasePath,
+    existsFile: (p) => p !== 'D:\gone\config.json', // 其它文件存在, 配置文件已删
+  })
+  const drifts = ops.replayDrifts(
+    { npmPrefix: null, devSidecarHome: null, startEnv: {}, configPath: 'D:\gone\config.json' },
+    { devSidecarHome: null, npmPrefix: null, startEnv: {} },
+  )
+  assert.equal(drifts.length, 1)
+  assert.ok(drifts[0].includes('配置文件失效'))
 })
 
 test('win32 installDefinition: 失败回滚 — reg add 失败后 vbs 被清理(不留半成品)', async () => {

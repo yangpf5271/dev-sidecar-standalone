@@ -23,9 +23,16 @@ async function run (args) {
   const addr = resolveProxyAddress(args)
   const { certPath, certExists } = resolveCertPaths()
 
+  // 面板统一地址源: 服务定义在管时以 manifest 固化地址探测(服务按安装时配置运行),
+  // 消除"进程行探当前 env 端口 + 服务行探固化端口"的同屏自相矛盾(判定书 P1 #24)
+  let svcAddr = addr
+  try {
+    svcAddr = createServiceOps().effectiveAddr(addr)
+  } catch { /* 探测失败回退当前 env 地址 */ }
+
   const [httpUp, mitmUp, certTrust, tools] = await Promise.all([
-    probePort(addr.host, addr.httpPort),
-    probePort(addr.host, addr.mitmPort),
+    probePort(svcAddr.host, svcAddr.httpPort),
+    probePort(svcAddr.host, svcAddr.mitmPort),
     certExists ? detectCertTrust(certPath) : Promise.resolve(null),
     collectTools(addr),
   ])
@@ -36,24 +43,27 @@ async function run (args) {
   console.log('')
   if (running) {
     console.log('  代理进程:  ✅ 运行中')
-    // PID 展示（守护进程才有 PID 文件；前台实例无）
+    // PID 展示（守护进程才有 PID 文件；前台实例无）。
+    // 版本僵告警仅采信「身份验证通过」的 PID —— 死 PID 残留/无关进程复用不再产生假告警
     const pidInfo = readPidInfo()
     if (pidInfo && isProcessAlive(pidInfo.pid)) {
-      console.log(`  进程 PID:  ${pidInfo.pid}${await verifyProcessIdentity(pidInfo.pid) ? '' : ' (⚠️ 身份未确认)'}`)
+      let trusted = false
+      try { trusted = await verifyProcessIdentity(pidInfo.pid) } catch { trusted = false }
+      console.log(`  进程 PID:  ${pidInfo.pid}${trusted ? '' : ' (⚠️ 身份未确认)'}`)
       // 版本僵告警: 更新后守护进程仍跑旧代码(npm 更新从不重启在跑的进程) —— 只判相等不判新旧
-      if (daemonVersionDiffers(pidInfo, pkg.version)) {
+      if (trusted && daemonVersionDiffers(pidInfo, pkg.version)) {
         console.log(`  ⚠️ 版本僵:  守护进程 v${pidInfo.version} ≠ CLI v${pkg.version}，建议 dss restart 对齐`)
       }
     }
   } else {
     console.log('  代理进程:  ❌ 未运行')
     if (!addr.isDefaultPort) {
-      console.log(`  (探测端口 ${addr.httpPort}/${addr.mitmPort}，来自${addr.configPath ? '配置文件' : 'PORT 环境变量'}，`)
+      console.log(`  (探测端口 ${svcAddr.httpPort}/${svcAddr.mitmPort}，来自${addr.configPath ? '配置文件' : 'PORT 环境变量'}，`)
       console.log('   请确认代理启动时使用了相同的配置)')
     }
   }
-  console.log(`  HTTP 代理:  ${addr.host}:${addr.httpPort}  ${httpUp ? '✅' : '—'}`)
-  console.log(`  HTTPS 代理: ${addr.host}:${addr.mitmPort}  ${mitmUp ? '✅' : '—'}  (MITM)`)
+  console.log(`  HTTP 代理:  ${svcAddr.host}:${svcAddr.httpPort}  ${httpUp ? '✅' : '—'}`)
+  console.log(`  HTTPS 代理: ${svcAddr.host}:${svcAddr.mitmPort}  ${mitmUp ? '✅' : '—'}  (MITM)`)
 
   console.log(`  CA 证书:    ${certExists ? '✅ 已生成' : '❌ 未生成 (启动一次代理后自动生成)'}`)
   if (certExists && certTrust) {
@@ -71,11 +81,15 @@ async function run (args) {
     const svc = await createServiceOps().status(addr)
     if (svc.installed) {
       const kindName = KIND_LABELS[process.platform === 'win32' ? 'runkey' : process.platform === 'darwin' ? 'launchd' : 'systemd']
-      const label = svc.state === 'running'
+      let label = svc.state === 'running'
         ? `✅ 运行中 (${kindName})`
         : svc.state === 'version-mismatch'
           ? `✅ 运行中 (${kindName})  ⚠️ 版本不一致(建议 dss restart)`
           : '⚠️ 已安装但未运行'
+      // 崩溃循环主动信号(Linux): Restart=always 永远达不到 systemd 熔断阈值, 无此检测则循环静默
+      if (svc.crashLoop) {
+        label += '  ⚠️ 崩溃循环(反复启动失败)，排查: journalctl -u dss.service -n 50'
+      }
       console.log(`  服务定义:   ${label}`)
     }
   } catch {

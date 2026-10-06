@@ -145,13 +145,21 @@ async function statusCmd (args) {
   const kindName = KIND_LABELS[platformKind()]
   if (s.state === 'installed-not-running') {
     console.log(`服务定义: ⚠️ 已安装 (${kindName}) 但代理未运行`)
-    console.log('   排查: dss log / 手动触发管理器通道启动')
+    if (s.crashLoop) {
+      console.log('   ⚠️ 服务处于崩溃循环(反复启动失败)，排查: journalctl -u dss.service -n 50')
+    } else {
+      console.log('   排查: dss log / 手动触发管理器通道启动')
+    }
     return
   }
   if (s.state === 'version-mismatch') {
     console.log(`服务定义: ⚠️ 运行中但版本不一致 (守护进程 v${s.daemonVersion} ≠ CLI v${require('../../package.json').version})，建议 dss restart 对齐`)
   } else {
     console.log(`服务定义: ✅ 运行中 (${kindName})`)
+  }
+  // 崩溃循环主动信号(Linux): systemd 永远不会熔断 Restart=always, 无此检测则循环静默
+  if (s.crashLoop) {
+    console.log('   ⚠️ 服务处于崩溃循环(反复启动失败)，排查: journalctl -u dss.service -n 50')
   }
   // 不变式③: 重放安装时解析与当前环境比对
   const manifest = ops.readManifest()
@@ -176,7 +184,8 @@ function help () {
   console.log('')
   console.log('注意:')
   console.log('  - 自启仅让代理待命; npm/git 代理配置仍由 dss npm on 等命令管理')
-  console.log('  - 服务在管时优先用管理器通道停止(systemctl/launchctl), dss stop 会给出提示')
+  console.log('  - 服务在管时优先用管理器通道停止/重启(systemctl restart 等),')
+  console.log('    dss restart 会与管理器的自动拉起产生竞态; dss stop 会给出提示')
   console.log('  - install 后修改 DEV_SIDECAR_HOME/PORT/HOST/-c 需重新 install(启动配置固化)')
   console.log('')
   console.log('示例:')
